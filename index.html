@@ -31,6 +31,14 @@
     color:#001; background:#7ddb4a; border:none; border-radius:8px; padding:12px 26px;
     letter-spacing:1px; cursor:pointer; box-shadow:0 4px 0 #3a7d18; }
   button.btn:active{ transform:translateY(3px); box-shadow:0 1px 0 #3a7d18; }
+  .bridgesel{ display:flex; align-items:center; gap:10px; font-size:clamp(11px,2.6vw,14px);
+    color:#cfd6ff; letter-spacing:1px; }
+  .bridgesel .arw{ font-family:inherit; font-weight:bold; font-size:18px; color:#001;
+    background:#7ddb4a; border:none; border-radius:6px; width:34px; height:30px; cursor:pointer;
+    box-shadow:0 3px 0 #3a7d18; }
+  .bridgesel .arw:active{ transform:translateY(2px); box-shadow:0 1px 0 #3a7d18; }
+  .bridgesel #brNum{ min-width:2.2em; text-align:center; font-weight:bold; color:#ffe14d;
+    font-size:clamp(18px,4vw,24px); }
   .big{ font-size:clamp(28px,8vw,56px); color:#ff5252; font-weight:bold; letter-spacing:3px;
     text-shadow:2px 2px 0 #500; }
   .score-line{ font-size:clamp(13px,3vw,18px); color:#ffe14d; }
@@ -68,6 +76,12 @@
       <div class="keys" id="keyHelp">
         <kbd>◀</kbd><kbd>▶</kbd> steer &nbsp; <kbd>▲</kbd> accelerate &nbsp;
         <kbd>▼</kbd> brake &nbsp; <kbd>Space</kbd> fire &nbsp; <kbd>P</kbd> pause
+      </div>
+      <div class="bridgesel">
+        <span>START BRIDGE</span>
+        <button class="arw" id="brDown">−</button>
+        <span id="brNum">1</span>
+        <button class="arw" id="brUp">+</button>
       </div>
       <button class="btn" id="startBtn">START GAME</button>
       <div class="keys" id="tiltHint"></div>
@@ -109,7 +123,8 @@ const SPR = {
   heli1:  ["00011100","00000111","00000100","00001110","10011111","11111111","11111111","10001110","00000100","00001110"],
   house:  ["00111000","01111100","11111110","11111110","10101010","10101010","11111110","00000000","00000000","00000100","00000100","00000100","00001110","00001110","00011111","00011111","00001110","00000100","00000100"],
   fuel:   ["0111110","1101111","1100111","1101111","1101111","1111111","1101011","1101011","1101011","1100011","1111111","1100011","1101111","1100111","1101111","1100011","1111111","1101111","1101111","1101111","1101111","1100011","1111111"],
-  tank:   ["00011000","00011000","01111110","11111111","11111111","01111110","10100101"]
+  tank:   ["00011000","00011000","01111110","11111111","11111111","01111110","10100101"],
+  pjet:   ["00001000","00001000","00011100","00111110","01101011","01001001","00011100","00101010"]
 };
 const DIGITS = [
   ["0011110","0110011","0110011","0110011","0110011","0110011","0110011","0011110"],
@@ -426,7 +441,7 @@ function newGame(startSec){
   resetGenerator(); gen.sec=startSec%NSEC; gen.blk=0; gen.level=startSec+1;
   blockCount = startSec>0 ? 999 : 0;             // skip the gentle intro when continuing
   game={ state:'play', score:0, lives:4, fuel:1.0, nextLife:10000, level:startSec+1,
-    dist:0, speed:1.0, baseV:36+startSec*1.5,
+    dist:0, speed:1.0, baseV:Math.min(78,36+startSec*1.5),
     blocks:[], worldTop:0,
     jetX:CENTER, jetDir:0,
     bullets:[], explosions:[], objs:[],
@@ -625,14 +640,17 @@ function update(dt){
       const e=riverEdges(o.wy), m=o.w/2+1;
       if(o.x-m<e.left){o.x=e.left+m;o.dir=1;}
       if(o.x+m>e.right){o.x=e.right-m;o.dir=-1;}
-      if(e.island>0&&Math.abs(o.x-CENTER)<e.island+m){o.dir*=-1;o.x+=o.dir*2;}
-    } else if(o.type===OBJ.FUEL||o.type===OBJ.BALLOON){
-      // keep static water objects in the water (never on the green land) as banks curve
-      const e=riverEdges(o.wy), m=o.w/2+1;
-      o.x=Math.max(e.left+m, Math.min(e.right-m, o.x));
-      if(e.island>2 && Math.abs(o.x-CENTER)<e.island+m){
-        o.x = o.x<CENTER ? (e.left+(CENTER-e.island))/2 : ((CENTER+e.island)+e.right)/2;
+      // never sit on a central island — push fully into the nearer channel
+      if(e.island>1 && Math.abs(o.x-CENTER)<e.island+m){
+        if(o.x<CENTER){o.x=CENTER-e.island-m;o.dir=-1;} else {o.x=CENTER+e.island+m;o.dir=1;}
       }
+      o.x=Math.max(e.left+m,Math.min(e.right-m,o.x));
+    } else if(o.type===OBJ.FUEL||o.type===OBJ.BALLOON){
+      // keep static water objects off the land and off any island
+      const e=riverEdges(o.wy), m=o.w/2+1;
+      if(e.island>1 && Math.abs(o.x-CENTER)<e.island+m)
+        o.x = o.x<CENTER ? (e.left+(CENTER-e.island))/2 : ((CENTER+e.island)+e.right)/2;
+      o.x=Math.max(e.left+m, Math.min(e.right-m, o.x));
     }
   }
 
@@ -655,14 +673,16 @@ function update(dt){
   }
   g.bullets=g.bullets.filter(b=>b.sy>-6);
 
-  // jet vs object / refuel
+  // jet vs object / refuel  (tight hitboxes; tanks are shoot-for-bonus, not lethal)
   if(g.invuln<=0){
+    const jhw=3, jhh=4;                       // jet half-size
     for(const o of g.objs){
-      if(!o.alive||o.type===OBJ.HOUSE||o.type===OBJ.MOUNTAIN||(o.type===OBJ.BRIDGE&&o.passable))continue;
+      if(!o.alive||o.type===OBJ.HOUSE||o.type===OBJ.MOUNTAIN||o.type===OBJ.TANK||(o.type===OBJ.BRIDGE&&o.passable))continue;
       const sy=w2s(o.wy);
-      if(sy<JET_Y-12||sy>JET_Y+12)continue;
-      let ox,ow; if(o.type===OBJ.BRIDGE){ox=CENTER;ow=o.half*2;} else {ox=o.x;ow=o.w+4;}
-      if(Math.abs(g.jetX-ox)<ow/2+3){
+      const ohh=o.type===OBJ.BRIDGE?5:(o.h/2);
+      if(Math.abs(sy-JET_Y) > jhh+ohh) continue;
+      const ox=o.type===OBJ.BRIDGE?CENTER:o.x, ohw=o.type===OBJ.BRIDGE?o.half:(o.w/2);
+      if(Math.abs(g.jetX-ox) < jhw+ohw){
         if(o.type===OBJ.FUEL){ g.fuel=Math.min(1,g.fuel+0.012); A2.refuel(); }
         else { boom(g.jetX,JET_Y,false); killJet(); return; }
       }
@@ -785,12 +805,10 @@ function render(){
   // enemy missiles (800XL): horizontal streaks crossing the river
   for(const eb of g.ebullets){ const sy=w2s(eb.wy); px(eb.x-2,sy,4,1,'#ff4040'); px(eb.x+(eb.vx>=0?2:-2),sy,1,1,'#ffd0d0'); }
 
-  // player plane — the original River Raid jet bitmap (banks left/right when steering)
+  // player plane — compact 800XL ROM jet (smaller than the 2600 sprite)
   if(g.state==='play'){
-    if(!(g.invuln>0&&(Math.floor(g.t*12)%2))){
-      if(g.jetDir!==0) sprite(G.jetMove,g.jetX,JET_Y-G.jetMove.h/2,C.jet,g.jetDir<0);
-      else sprite(G.jet,g.jetX,JET_Y-G.jet.h/2,C.jet,false);
-    }
+    if(!(g.invuln>0&&(Math.floor(g.t*12)%2)))
+      sprite(G.pjet,g.jetX,JET_Y-G.pjet.h/2,C.jet,false);
   }
 
   // explosions
@@ -834,7 +852,7 @@ function drawHUD(){
   drawLabel('P1',4,y0+3,C.hudText,1);
   drawDigits(g.score,5, 4, y0+11, 2, C.hudText);        // ends ~x84
   // --- centre-top: remaining planes ---
-  for(let i=0;i<Math.min(g.lives-1,3);i++) sprite(G.jet, 92+i*9, y0+4, '#303030', false);
+  for(let i=0;i<Math.min(g.lives-1,3);i++) sprite(G.pjet, 92+i*9, y0+5, '#303030', false);
   // --- right: HI score + BRIDGE counter (two tidy lines) ---
   drawLabel('HI',122,y0+3,C.hudText,1); drawDigits(best,5,136,y0+3,1,C.hudText);    // ->176
   drawLabel('BRIDGE',118,y0+12,C.hudText,1);
@@ -875,7 +893,19 @@ function startGame(sec){ sec=(typeof sec==='number')?sec:0; A2.init(); A2.resume
   else enableTilt();
   if(isTouch){ document.getElementById('tiltTag').classList.remove('hidden'); goFullscreen(); }
   show(null); A2.startEngine(); newGame(sec); paused=false; }
-document.getElementById('startBtn').addEventListener('click',()=>startGame(0));
+// title-screen bridge select (start at any bridge, like the 800XL cartridge)
+const MAX_BRIDGE=99;                         // difficulty caps at 48; geometry loops beyond
+let startBridge=1;
+const brNum=document.getElementById('brNum');
+function setBr(n){ startBridge=((n-1+MAX_BRIDGE)%MAX_BRIDGE)+1; brNum.textContent=startBridge; }
+function holdRepeat(id,fn){ const el=document.getElementById(id); let t,iv;
+  const start=e=>{e.preventDefault(); fn(); t=setTimeout(()=>{iv=setInterval(fn,70);},320);};
+  const stop=()=>{clearTimeout(t);clearInterval(iv);};
+  el.addEventListener('mousedown',start); el.addEventListener('touchstart',start,{passive:false});
+  ['mouseup','mouseleave','touchend','touchcancel'].forEach(ev=>el.addEventListener(ev,stop)); }
+holdRepeat('brDown',()=>setBr(startBridge-1));
+holdRepeat('brUp',()=>setBr(startBridge+1));
+document.getElementById('startBtn').addEventListener('click',()=>startGame(startBridge-1));
 document.getElementById('againBtn').addEventListener('click',()=>startGame(0));
 document.getElementById('continueBtn').addEventListener('click',()=>startGame(lastStageSec));
 document.getElementById('resumeBtn').addEventListener('click',togglePause);
