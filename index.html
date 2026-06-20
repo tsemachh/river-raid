@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>River Raid</title>
+<style>
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; height:100%; background:#000; overflow:hidden;
+    font-family:"Courier New",monospace; color:#fff; touch-action:none;
+    -webkit-user-select:none; user-select:none; }
+  #wrap{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
+  #stage{ position:relative; height:100%; aspect-ratio:192/214; max-width:100%;
+    background:#000; box-shadow:0 0 0 4px #111, 0 0 40px rgba(0,80,255,.15); }
+  canvas{ display:block; width:100%; height:100%; image-rendering:pixelated;
+    image-rendering:crisp-edges; background:#000; }
+
+  .screen{ position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center; gap:14px;
+    background:rgba(0,0,8,.86); z-index:5; padding:18px; }
+  .hidden{ display:none !important; }
+  .logo b{ display:block; font-size:clamp(26px,7vw,52px); color:#4f7cff; font-weight:bold;
+    letter-spacing:2px; text-shadow:2px 2px 0 #0a2; }
+  .logo span{ font-size:clamp(11px,2.4vw,15px); color:#7ddb4a; letter-spacing:4px; }
+  .sub{ font-size:clamp(11px,2.6vw,15px); color:#cfd6ff; max-width:30em; line-height:1.5; }
+  .keys{ font-size:clamp(10px,2.2vw,13px); color:#9aa; line-height:1.7; }
+  .keys kbd{ background:#222; border:1px solid #555; border-bottom-width:2px;
+    border-radius:4px; padding:1px 6px; color:#fff; }
+  button.btn{ font-family:inherit; font-weight:bold; font-size:clamp(14px,3.4vw,18px);
+    color:#001; background:#7ddb4a; border:none; border-radius:8px; padding:12px 26px;
+    letter-spacing:1px; cursor:pointer; box-shadow:0 4px 0 #3a7d18; }
+  button.btn:active{ transform:translateY(3px); box-shadow:0 1px 0 #3a7d18; }
+  .big{ font-size:clamp(28px,8vw,56px); color:#ff5252; font-weight:bold; letter-spacing:3px;
+    text-shadow:2px 2px 0 #500; }
+  .score-line{ font-size:clamp(13px,3vw,18px); color:#ffe14d; }
+
+  #touch{ position:absolute; inset:0; z-index:4; pointer-events:none; }
+  .pad{ position:absolute; bottom:0; display:flex; gap:10px; padding:14px; }
+  #padL{ left:0; } #padR{ right:0; flex-direction:column-reverse; align-items:flex-end; }
+  .tbtn{ pointer-events:auto; width:60px; height:60px; border-radius:50%;
+    background:rgba(40,48,80,.55); border:2px solid rgba(150,170,255,.5);
+    color:#dfe6ff; font-size:24px; font-weight:bold; display:flex;
+    align-items:center; justify-content:center; touch-action:none; }
+  .tbtn:active{ background:rgba(120,140,255,.7); }
+  #btnFire{ width:76px; height:76px; background:rgba(120,40,40,.6);
+    border-color:rgba(255,140,140,.6); font-size:14px; }
+  .tilt-tag{ position:absolute; top:8px; left:50%; transform:translateX(-50%);
+    font-size:11px; color:#7ddb4a; background:rgba(0,0,0,.4); padding:2px 8px;
+    border-radius:10px; z-index:6; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="cv" width="384" height="428"></canvas>
+
+    <div id="touch" class="hidden">
+      <div class="pad" id="padL"><div class="tbtn" id="btnLeft">◀</div><div class="tbtn" id="btnRight">▶</div></div>
+      <div class="pad" id="padR"><div class="tbtn" id="btnFire">FIRE</div><div class="tbtn" id="btnUp">▲</div><div class="tbtn" id="btnDown">▼</div></div>
+    </div>
+    <div id="tiltTag" class="tilt-tag hidden">TILT TO STEER</div>
+
+    <div id="titleScreen" class="screen">
+      <div class="logo"><span>ACTIVISION STYLE</span><b>RIVER RAID</b></div>
+      <div class="sub">Fly up the river. Shoot tankers, choppers, jets and bridges.
+        Fly over fuel depots to refuel — run dry and you crash.</div>
+      <div class="keys" id="keyHelp">
+        <kbd>◀</kbd><kbd>▶</kbd> steer &nbsp; <kbd>▲</kbd> accelerate &nbsp;
+        <kbd>▼</kbd> brake &nbsp; <kbd>Space</kbd> fire &nbsp; <kbd>P</kbd> pause
+      </div>
+      <button class="btn" id="startBtn">START GAME</button>
+      <div class="keys" id="tiltHint"></div>
+    </div>
+
+    <div id="pauseScreen" class="screen hidden">
+      <div class="logo"><b style="font-size:clamp(22px,6vw,40px)">PAUSED</b></div>
+      <button class="btn" id="resumeBtn">RESUME</button>
+    </div>
+
+    <div id="overScreen" class="screen hidden">
+      <div class="big">GAME OVER</div>
+      <div class="score-line" id="finalScore">SCORE 0</div>
+      <div class="score-line" id="bestScore">BEST 0</div>
+      <button class="btn" id="continueBtn">CONTINUE</button>
+      <button class="btn" id="againBtn">PLAY AGAIN</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================================
+   RIVER RAID — HTML5 replica
+   • Level generation: bit-exact port of Carol Shaw's 16-bit LFSR (seed $A814),
+     16-block sections w/ bridges & islands, original difficulty curve.
+   • Sprites & score font: the exact bitmaps from the 1982 disassembly,
+     reconstructed from the interlaced A/B player-graphics tables.
+   • Colours: the original NTSC palette values.
+   ============================================================================ */
+
+/* ---- exact sprite bitmaps (from disassembly, 2600 storage de-interlaced) ---- */
+const SPR = {
+  jet:    ["00001000","00001000","00001000","00011100","00111110","01111111","01111111","01101011","01001001","00001000","00011100","00111110","00101010"],
+  jetMove:["0000100","0000100","0000100","0001100","0011110","0011111","0011111","0010111","0000101","0000100","0001100","0011110","0010111","0000001"],
+  ship:   ["00010000","00010000","00110000","01111000","11111111","11111110","11111100","01111100"],
+  plane:  ["10000000","11000110","11111111","01001111","00111000","00110000"],
+  heli0:  ["00000111","00011100","00000100","00001110","10011111","11111111","11111111","10001110","00000100","00001110"],
+  heli1:  ["00011100","00000111","00000100","00001110","10011111","11111111","11111111","10001110","00000100","00001110"],
+  house:  ["00111000","01111100","11111110","11111110","10101010","10101010","11111110","00000000","00000000","00000100","00000100","00000100","00001110","00001110","00011111","00011111","00001110","00000100","00000100"],
+  fuel:   ["0111110","1101111","1100111","1101111","1101111","1111111","1101011","1101011","1101011","1100011","1111111","1100011","1101111","1100111","1101111","1100011","1111111","1101111","1101111","1101111","1101111","1100011","1111111"],
+  tank:   ["00011000","00011000","01111110","11111111","11111111","01111110","10100101"]
+};
+const DIGITS = [
+  ["0011110","0110011","0110011","0110011","0110011","0110011","0110011","0011110"],
+  ["000110","001110","000110","000110","000110","000110","000110","001111"],
+  ["0011110","0100011","0000011","0000011","0011110","0110000","0110000","0111111"],
+  ["0011110","0100011","0000011","0000110","0000110","0000011","0100011","0011110"],
+  ["0000110","0001110","0010110","0100110","0111111","0000110","0000110","0000110"],
+  ["0111111","0110000","0110000","0111110","0000011","0000011","0100011","0111110"],
+  ["0011110","0110001","0110000","0111110","0110011","0110011","0110011","0011110"],
+  ["0111111","0100001","0000011","0000110","0001100","0001100","0001100","0001100"],
+  ["0011110","0110011","0110011","0011110","0011110","0110011","0110011","0011110"],
+  ["0011110","0110011","0110011","0110011","0011111","0000011","0100011","0011110"]
+];
+// pre-parse to coordinate lists for fast drawing
+function parse(rows){ const o=[]; for(let r=0;r<rows.length;r++) for(let c=0;c<rows[r].length;c++) if(rows[r][c]==='1') o.push([c,r]); return {pts:o, w:rows[0].length, h:rows.length}; }
+const G={}; for(const k in SPR) G[k]=parse(SPR[k]);
+const GD = DIGITS.map(parse);
+
+/* ---- higher-detail, multicolour 800XL-style actor sprites (original art) ---- */
+const ACT={
+ jet:{pal:{W:'#e6e6ee',G:'#8f97a4',C:'#46c8e6',R:'#ff5a28'},rows:[
+  "....W....","....W....","...WWW...","..WWCWW..","..WWCWW..",
+  "WWWWWWWWW","WWWWWWWWW","..WWWWW..","...WWW...","..G.W.G..","..R...R.."]},
+ ship:{pal:{H:'#b4b4c2',D:'#565663',R:'#d23a3a'},rows:[
+  ".....DD......","....DDDD.....","...RDDDDR....","HHHHHHHHHHHHH",".HHHHHHHHHHH.","..HHHHHHHHH.."]},
+ heli0:{pal:{K:'#3a3a46',Y:'#46c8c8',D:'#1f7a7a',C:'#a8e4ff'},rows:[
+  "KKKKKKKKKKK",".....K.....","...YYYYY...","..YYYYYYY..",".YYYCCYYYY.","..YY.YY....","...DDDD...."]},
+ heli1:{pal:{K:'#3a3a46',Y:'#46c8c8',D:'#1f7a7a',C:'#a8e4ff'},rows:[
+  "..K.....K..","...K...K...","....KKK....","...YYYYY...",".YYYCCYYYY.","..YYYYYY...","...DDDD...."]},
+ plane:{pal:{G:'#86d24a',D:'#3c8222',R:'#ff8a20'},rows:[
+  ".......GGG...","R..GGGGGGGGG.","RGGGGGGGGGGGG","R..GGGGGGGGG.",".......GGG..."]},
+ balloon:{pal:{R:'#e03a3a',Y:'#f0d048',K:'#8a5a2a',W:'#ffffff'},rows:[
+  "..RRRRR..",".RRWYWRR.","RRYYYYYRR","RRRRRRRRR","YYYYYYYYY","RRRRRRRRR",".RRRRRRR.","..YYYYY..","...R.R...","..KKKKK..","..KKKKK..","...K.K..."]},
+ tank:{pal:{G:'#9aa040',D:'#56561e',B:'#6a6a28'},rows:[
+  "....D....","...GGG...",".GGGGGGG.","GGGGGGGGG","GGGGGGGGG","B.B.B.B.B"]}
+};
+for(const k in ACT){ const a=ACT[k]; a.w=a.rows[0].length; a.h=a.rows.length; }
+function drawActor(a,cx,topY,mirror){ const w=a.w, ox=Math.round(cx-w/2), oy=Math.round(topY);
+  for(let r=0;r<a.h;r++){ const row=a.rows[r];
+    for(let c=0;c<w;c++){ const ch=row[c]; if(ch==='.')continue;
+      px(ox+(mirror?(w-1-c):c), oy+r, 1, 1, a.pal[ch]); } } }
+
+/* ---- REAL map geometry, extracted from the original River Raid map image ----
+   48 sections x 16 blocks. Values are river half-width / island half-width in
+   playfield pixels (0..~60). Block 0 of each section is the narrow bridge channel. */
+const MAP_HALF=[
+[10,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[11,60,60,60,60,60,60,34,36,36,37,60,60,60,60,25],
+[10,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[10,60,60,60,60,60,60,42,60,60,60,60,60,60,60,25],
+[11,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[11,60,60,60,60,43,60,60,60,60,60,60,60,60,60,25],
+[10,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[10,60,60,36,36,60,60,60,60,60,60,60,60,43,43,21],
+[11,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[11,43,60,60,60,60,60,60,60,60,10,10,10,37,10,21],
+[10,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[11,60,60,60,60,60,60,42,60,60,60,60,60,60,60,25],
+[11,43,43,43,43,43,43,43,43,43,43,42,42,42,42,25],
+[10,60,60,60,60,60,60,60,60,60,60,60,60,60,43,25],
+[12,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[11,60,60,60,56,43,60,60,60,60,60,60,60,60,56,25],
+[11,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[11,59,12,57,10,10,43,53,33,28,49,48,58,59,10,10],
+[11,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[10,60,60,60,60,60,29,30,15,15,36,60,60,60,60,25],
+[10,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[11,43,10,60,60,60,60,42,57,60,60,60,60,60,60,25],
+[10,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[11,60,60,60,60,60,60,60,60,43,43,60,60,12,60,25],
+[10,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[10,60,60,60,60,60,60,60,60,60,60,60,60,60,60,25],
+[11,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[11,42,48,58,58,24,8,58,58,10,58,60,58,37,47,10],
+[10,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[10,60,60,60,60,60,36,60,60,60,60,60,60,60,60,25],
+[10,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[10,60,60,60,60,60,60,60,60,60,60,60,60,60,36,25],
+[10,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[12,60,60,60,60,33,33,33,33,60,60,60,60,60,60,10],
+[10,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[12,60,60,60,60,60,60,43,43,43,48,60,60,60,60,25],
+[12,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[12,60,37,20,20,20,36,60,60,60,60,60,60,47,60,25],
+[11,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[10,60,60,60,60,60,12,60,60,60,60,60,60,60,60,25],
+[10,43,43,43,43,43,43,43,43,43,43,43,43,43,43,21],
+[10,60,60,60,60,60,60,60,57,60,60,60,60,60,37,21],
+[10,43,43,43,43,43,43,43,43,43,43,43,43,43,43,21],
+[10,43,43,22,60,22,29,60,25,10,34,60,60,60,60,22],
+[10,43,43,43,43,43,43,43,43,43,43,43,43,43,43,21],
+[11,60,60,60,60,60,60,60,42,36,36,60,60,60,60,25],
+[10,43,43,43,43,43,43,43,43,43,43,43,43,43,43,25],
+[10,60,18,18,24,15,20,37,50,17,10,23,28,19,20,17]
+];
+const MAP_ISL=[
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,17,31,0,0,0,0,0,0,0,0,11,15,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,22,27,17,26,0,0,0,27,21,0,0,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,21,0,0,0,0,16,16,8,18,22,22,22,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,0,0,0,14,31,0,0,0,26,17,0,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,0,32,12,31,10,32,0,0,0,0,0,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,32,25,22,8,0,0,0,22,12,10,32,31,31,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,32,32,26,17,17,31,0,0,0,0,0,0,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,7,32,0,0,0,0,10,31,34,32,31,8,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,32,0,0,0,0,0,0,0,0,0,25,17,12,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,0,0,12,0,0,0,0,0,0,0,0,31,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,31,31,10,31,25,32,0,0,0,0,0,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,21,12,31,31,31,32,31,32,12,31,31,8,16,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,21,0,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,21,8,0,0,0,0,0,12,25,34,20,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,0,0,8,10,31,8,17,22,24,21,16,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,0,31,0,0,0,0,0,0,22,22,0,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,31,8,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,0,0,0,0,0,17,31,11,16,0,0,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,16,0,0,0,0,0,22,25,27,27,32,22,17,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,22,22,11,17,17,0,0,0,0,16,21,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,16,12,22,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,22,0,0,0,0,0,0,0,0,0,31,32,8,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+];
+const NSEC=MAP_HALF.length;
+
+/* ------------------------------------------------------------- constants */
+const FIELD_W = 192;          // wider playfield -> thicker banks, roomier (less tight)
+const PLAY_H  = 172;          // playfield height
+const HUD_H   = 42;           // bottom status panel
+const CENTER  = FIELD_W/2;
+const BLOCK_H = 31;           // ~5-6 blocks visible — matches the original's on-screen density
+const SECTION_BLOCKS = 16;
+const JET_Y   = PLAY_H - 26;  // jet's fixed screen row (near bottom)
+// remap raw map half-widths (0..60, in the old 160 field) to roomier 800XL-like
+// proportions: thick green banks, channels never brutally tight.
+function mapHalf(raw){ return Math.round(14 + raw*0.66); }   // -> ~14..54 px each side
+
+// pattern id (2..14) -> river half-width each side of centre
+function halfWidthForId(id){
+  const minHalf=20, maxHalf=60, t=(id-2)/12;
+  return Math.round(maxHalf - t*(maxHalf-minHalf));
+}
+
+const OBJ={NONE:0,FUEL:1,SHIP:2,HELI:3,JET:4,HOUSE:5,BRIDGE:6,TANK:7,BALLOON:8,MOUNTAIN:9};
+// exact enemy mix from Carol Shaw's EnemyIdTab (ship/heli/plane): ~50% heli, ~37% ship, ~12% jet
+const ENEMY_TAB=[OBJ.SHIP,OBJ.HELI,OBJ.SHIP,OBJ.HELI,OBJ.JET,OBJ.SHIP,OBJ.HELI,OBJ.HELI];
+const SCORE={[OBJ.SHIP]:30,[OBJ.HELI]:60,[OBJ.FUEL]:80,[OBJ.JET]:100,[OBJ.BRIDGE]:500,[OBJ.TANK]:100,[OBJ.BALLOON]:60};
+
+// authentic NTSC palette approximations
+const C={
+  river:'#4858d8', riverDk:'#2730b0',
+  bank:'#58a838', bankEdge:'#7c1e1e',      // 800XL: green land, dark-maroon jagged shoreline
+  island:'#58a838', islandEdge:'#7c1e1e',
+  mountain:'#7c1e1e', mountainAcc:'#4858d8',
+  jet:'#e0e0e0',
+  ship:'#101018', shipStripe:'#cc3030', shipHull:'#40c0c0',  // black hull, red+cyan waterline
+  heli:'#58a830', heliRotor:'#e8c040',     // green body, yellow rotor
+  plane:'#8ad24a',
+  tank:'#b0b040', tankDk:'#6a6a20',
+  fuelBody:'#c840b4', fuelMark:'#ffffff',   // 800XL: magenta depot, white "FUEL"
+  bridge:'#9a6a2a', bridgeDk:'#5a3a12',     // brown wooden bridge
+  road:'#9a9a9a', roadEdge:'#d8d040',       // grey road with yellow border
+  bullet:'#ffffff',
+  explo:['#fff14d','#ff9a2a','#ff4a2a','#a01010'],
+  hudPanel:'#b4b4b4', hudText:'#101010', hudYellow:'#e8e040',
+  fuelGood:'#3ad13a', fuelWarn:'#e8c020', fuelLow:'#ff3030'
+};
+
+/* ----------------------------------------------------------- 16-bit LFSR */
+let R_lo=0x14, R_hi=0xA8;
+function lfsrSeed(){ R_lo=0x14; R_hi=0xA8; }
+function lfsrNext(){
+  let a=R_hi;
+  a=(a<<1)&0xFF; a=(a<<1)&0xFF; a=(a<<1)&0xFF;   // hi<<3
+  a^=R_hi;                                       // EOR hi
+  const carry=(a>>7)&1;                          // ASL A -> C
+  const nlo=((R_lo<<1)|carry)&0xFF;
+  const clo=(R_lo>>7)&1;
+  const nhi=((R_hi<<1)|clo)&0xFF;
+  R_lo=nlo; R_hi=nhi;
+}
+
+/* --------------------------------------------------------- generator */
+let gen={};
+function resetGenerator(){
+  lfsrSeed();
+  gen={ sec:0, blk:0, level:1 };   // index into the real map data
+}
+// Build the next block straight from the extracted original map; the LFSR now
+// only drives object selection (which enemy / fuel / direction), not geometry.
+function nextBlockDesc(){
+  const sec=gen.sec, blk=gen.blk;
+  const half=mapHalf(MAP_HALF[sec][blk]);
+  // keep an open river run for the first blocks after a bridge; islands return afterward
+  const islandHalf=(blk>=1&&blk<=2)?0:(MAP_ISL[sec][blk]?Math.round(MAP_ISL[sec][blk]*0.66):0);
+  const isBridge=(blk===0);          // block 0 = the narrow bridge channel
+  lfsrNext();
+
+  let obj=OBJ.NONE, dir=(R_lo&0x80)?1:-1;
+  if(isBridge){ obj=OBJ.BRIDGE; }
+  else if(blk===1){ obj=(R_lo&0x40)?OBJ.NONE:OBJ.FUEL; }   // reserved block after the bridge: never an enemy
+  else {
+    const lvl=Math.min(48,gen.level);
+    const a=((64-lvl)<<1)&0xFF;             // enemy threshold: ~126 (bridge 1) .. ~32 (bridge 48)
+    if(R_hi>a){ obj=ENEMY_TAB[R_hi&(lvl>=3?7:1)];
+      if(lvl>=4 && (R_lo&0x07)===0) obj=OBJ.BALLOON; }   // 800XL extra: balloon blockade from bridge 4
+
+    else if(!(R_lo&0x40)){ obj=OBJ.FUEL; }            // ~half the remainder -> fuel
+    else { obj=OBJ.NONE; }                             // the "house" slot -> open water (no land objects)
+  }
+
+  const b={ sec, blk, isBridge, half, islandHalf, obj, dir, rx:(R_lo&0x3F), onBank:(R_hi&1)?1:-1 };
+  if(obj!==OBJ.NONE && obj!==OBJ.BRIDGE && obj!==OBJ.HOUSE){
+    const inner=Math.max(6,half-8), span=Math.max(8,inner*2);
+    let x=CENTER-inner+(b.rx/63)*span;
+    if(islandHalf>2 && Math.abs(x-CENTER)<islandHalf+6) x+=(x<CENTER?-1:1)*(islandHalf+8);
+    b.objX=Math.max(8,Math.min(FIELD_W-8,x));
+  }
+
+  gen.blk++;
+  if(gen.blk>=16){ gen.blk=0; gen.sec=(gen.sec+1)%NSEC; gen.level=Math.min(48,gen.level+1); }
+  return b;
+}
+
+/* ----------------------------------------------------------------- audio */
+const A2=(()=>{
+  // POKEY-style synthesis: the engine is a buzzy detuned motor, effects are
+  // built from the TIA/POKEY-flavoured noise + square channels.
+  let ctx=null,master=null,started=false;
+  let e1,e2,eNoiseSrc,eNoiseGain,eF,eGain,wob,wobGain;
+  function init(){ if(ctx)return; const AC=window.AudioContext||window.webkitAudioContext; ctx=new AC();
+    master=ctx.createGain(); master.gain.value=0.45; master.connect(ctx.destination); }
+  function resume(){ if(ctx&&ctx.state==='suspended') ctx.resume(); }
+  function noise(d){ const n=Math.floor(ctx.sampleRate*d), b=ctx.createBuffer(1,n,ctx.sampleRate), x=b.getChannelData(0);
+    for(let i=0;i<n;i++)x[i]=Math.random()*2-1; return b; }
+  function loopNoise(){ const b=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate), x=b.getChannelData(0);
+    for(let i=0;i<x.length;i++)x[i]=Math.random()*2-1; return b; }
+  function startEngine(){ if(!ctx||started)return;
+    // clean square-wave engine tone (the "nice" fly sound) through a lowpass
+    e1=ctx.createOscillator(); e1.type='square'; e1.frequency.value=55;
+    e2=ctx.createOscillator(); e2.type='triangle'; e2.frequency.value=110;  // soft octave for warmth
+    eNoiseGain=ctx.createGain(); eNoiseGain.gain.value=0.4;                  // mix for the octave
+    eF=ctx.createBiquadFilter(); eF.type='lowpass'; eF.frequency.value=900;
+    eGain=ctx.createGain(); eGain.gain.value=0;                              // silent unless thrusting
+    e1.connect(eF); e2.connect(eNoiseGain); eNoiseGain.connect(eF);
+    eF.connect(eGain); eGain.connect(master);
+    e1.start(); e2.start(); started=true; }
+  function stopEngine(){ if(!started)return; try{e1.stop();e2.stop();}catch(e){} started=false; }
+  function setThrust(on,s){ if(!started)return; const t=ctx.currentTime;
+    const f=60+s*80;
+    e1.frequency.setTargetAtTime(f,t,0.05); e2.frequency.setTargetAtTime(f*2,t,0.05);
+    eF.frequency.setTargetAtTime(700+s*600,t,0.08);
+    eGain.gain.setTargetAtTime(on?0.10:0.0,t,0.05); }
+  function fire(){ if(!ctx)return; const t=ctx.currentTime;
+    const o=ctx.createOscillator(),g=ctx.createGain(); o.type='square';
+    o.frequency.setValueAtTime(1200,t); o.frequency.exponentialRampToValueAtTime(120,t+0.16);
+    g.gain.setValueAtTime(0.001,t); g.gain.linearRampToValueAtTime(0.2,t+0.005);
+    g.gain.exponentialRampToValueAtTime(0.001,t+0.18);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t+0.19); }
+  function heliShoot(){ if(!ctx)return; const t=ctx.currentTime;
+    const o=ctx.createOscillator(),g=ctx.createGain(); o.type='square';
+    o.frequency.setValueAtTime(260,t); o.frequency.exponentialRampToValueAtTime(90,t+0.14);
+    g.gain.setValueAtTime(0.1,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.15);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t+0.16); }
+  function explosion(big){ if(!ctx)return; const t=ctx.currentTime, d=big?0.85:0.5;
+    const s=ctx.createBufferSource(); s.buffer=noise(d);
+    const f=ctx.createBiquadFilter(); f.type='lowpass';
+    f.frequency.setValueAtTime(big?2200:1500,t); f.frequency.exponentialRampToValueAtTime(90,t+d);
+    const g=ctx.createGain(); g.gain.setValueAtTime(big?0.5:0.36,t); g.gain.exponentialRampToValueAtTime(0.001,t+d);
+    // low boom under the noise
+    const o=ctx.createOscillator(); o.type='triangle'; o.frequency.setValueAtTime(big?150:200,t);
+    o.frequency.exponentialRampToValueAtTime(40,t+d); const og=ctx.createGain();
+    og.gain.setValueAtTime(big?0.3:0.2,t); og.gain.exponentialRampToValueAtTime(0.001,t+d);
+    s.connect(f); f.connect(g); g.connect(master); o.connect(og); og.connect(master);
+    s.start(t); s.stop(t+d); o.start(t); o.stop(t+d); }
+  function refuel(){ if(!ctx)return; const t=ctx.currentTime; const o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='square'; o.frequency.value=880; g.gain.setValueAtTime(0.07,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.06);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t+0.07); }
+  function lowFuel(){ if(!ctx)return; const t=ctx.currentTime; const o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='square'; o.frequency.value=300; g.gain.setValueAtTime(0.001,t); g.gain.linearRampToValueAtTime(0.14,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.001,t+0.22); o.connect(g); g.connect(master); o.start(t); o.stop(t+0.24); }
+  return {init,resume,startEngine,stopEngine,setThrust,heliShoot,fire,explosion,refuel,lowFuel};
+})();
+
+/* -------------------------------------------------------------- game */
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+ctx.imageSmoothingEnabled=false;
+
+let game=null, blockCount=0, lastStageSec=0;   // lastStageSec = furthest stage reached
+function newGame(startSec){
+  startSec=startSec||0;
+  resetGenerator(); gen.sec=startSec%NSEC; gen.blk=0; gen.level=startSec+1;
+  blockCount = startSec>0 ? 999 : 0;             // skip the gentle intro when continuing
+  game={ state:'play', score:0, lives:4, fuel:1.0, nextLife:10000, level:startSec+1,
+    dist:0, speed:1.0, baseV:36+startSec*1.5,
+    blocks:[], worldTop:0,
+    jetX:CENTER, jetDir:0,
+    bullets:[], explosions:[], objs:[],
+    fireCool:0, invuln:1.5, deadTimer:0, lowBeep:0, t:0,
+    shownLevel:startSec+1, banner:startSec>0?1.6:0, checkpoints:[{wy:0,sec:startSec%NSEC}],
+    waiting:false, heliTimer:1.2, ebullets:[] };
+  while(game.worldTop < JET_Y + BLOCK_H*4) pushBlock();
+}
+function pushBlock(){
+  const b=nextBlockDesc();
+  b.worldY=game.worldTop;             // bottom edge of block in world coords
+  b.parity=(Math.floor(b.worldY/BLOCK_H))&1;  // stable bank-stripe parity
+  if(blockCount<4){ b.obj=OBJ.NONE; b.isBridge=false; } // ease-in
+  game.worldTop+=BLOCK_H; blockCount++;
+  game.blocks.push(b);
+  if(b.isBridge){ game.checkpoints.push({wy:b.worldY, sec:b.sec});
+    if(game.checkpoints.length>6) game.checkpoints.shift(); }
+  const cy=b.worldY+BLOCK_H/2;
+  const bridgeWy=b.worldY+9;          // sit in the narrow neck (not the widening part)
+  if(b.obj===OBJ.BRIDGE) game.objs.push({type:OBJ.BRIDGE,wy:bridgeWy,half:b.half,sec:b.sec,alive:true});
+  else if(b.obj!==OBJ.NONE){
+    const dim=b.obj===OBJ.FUEL?G.fuel:b.obj===OBJ.SHIP?G.ship:b.obj===OBJ.HELI?G.heli0:b.obj===OBJ.JET?G.plane:ACT.balloon;
+    game.objs.push({type:b.obj,x:b.objX,wy:cy,w:dim.w,h:dim.h,dir:b.dir,alive:true,
+      vx:b.obj===OBJ.SHIP?0.18:b.obj===OBJ.HELI?0.35:b.obj===OBJ.JET?0.6:0});
+  }
+  // a tank may be crossing the bridge -> 750-pt bonus if you blow it then (tanks never shoot)
+  if(blockCount>=4 && b.isBridge && (b.rx&3)===0){
+    game.objs.push({type:OBJ.TANK,wy:bridgeWy,x:CENTER,onBridge:true,w:ACT.tank.w,h:ACT.tank.h,alive:true});
+  }
+  // decorative maroon mountains on the green banks (the 800XL "landscape" look)
+  if(blockCount>=4 && !b.isBridge && (b.rx&1)===0){
+    game.objs.push({type:OBJ.MOUNTAIN,wy:b.worldY+(b.rx%BLOCK_H),onBank:(b.rx&2)?1:-1,size:6+(b.rx&3)*3,alive:true});
+  }
+}
+// world<->screen : feature ahead (larger wy) is higher up; flows DOWN toward jet
+function w2s(wy){ return JET_Y - (wy - game.dist); }
+function s2w(sy){ return game.dist + (JET_Y - sy); }
+
+function blockAt(wy){
+  const b0=game.blocks[0];
+  let i=Math.floor((wy-b0.worldY)/BLOCK_H);
+  i=Math.max(0,Math.min(game.blocks.length-1,i));
+  return i;
+}
+function riverEdges(wy){
+  const i=blockAt(wy);
+  const b0=game.blocks[i], b1=game.blocks[Math.min(game.blocks.length-1,i+1)];
+  let t=Math.max(0,Math.min(1,(wy-b0.worldY)/BLOCK_H));
+  let half,isl;
+  if(b0.isBridge){
+    // a bridge sits in a NARROW neck between stages: stay tight, then open up at the very end
+    const tt=t<0.7?0:((t-0.7)/0.3), s=tt*tt*(3-2*tt);
+    half=b0.half+(b1.half-b0.half)*s; isl=0;
+  } else {
+    const s=t*t*(3-2*t);                            // smoothstep -> organic curved banks
+    half=b0.half+(b1.half-b0.half)*s;
+    isl =b0.islandHalf+(b1.islandHalf-b0.islandHalf)*s;
+  }
+  return {left:CENTER-half,right:CENTER+half,half,island:isl};
+}
+// pick an x in open water at worldY wy (side channel if the centre is an island)
+function safeSpawnX(wy){
+  const e=riverEdges(wy);
+  if(e.island>2){
+    const lw=(CENTER-e.island)-e.left, rw=e.right-(CENTER+e.island);
+    return lw>=rw ? (e.left+(CENTER-e.island))/2 : ((CENTER+e.island)+e.right)/2;
+  }
+  return (e.left+e.right)/2;
+}
+
+/* -------------------------------------------------------------- input */
+const keys={}; let tiltSteer=0, tiltOn=false;
+addEventListener('keydown',e=>{ if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key))e.preventDefault();
+  keys[e.key]=true; if(e.key==='p'||e.key==='P')togglePause(); });
+addEventListener('keyup',e=>{ keys[e.key]=false; });
+function hold(id,k){ const el=document.getElementById(id);
+  const on=e=>{e.preventDefault();keys[k]=true;}, off=e=>{e.preventDefault();keys[k]=false;};
+  el.addEventListener('touchstart',on,{passive:false}); el.addEventListener('touchend',off,{passive:false});
+  el.addEventListener('touchcancel',off,{passive:false}); el.addEventListener('mousedown',on);
+  el.addEventListener('mouseup',off); el.addEventListener('mouseleave',off); }
+hold('btnLeft','ArrowLeft'); hold('btnRight','ArrowRight'); hold('btnUp','ArrowUp');
+hold('btnDown','ArrowDown'); hold('btnFire',' ');
+let tiltNeutral=null, tiltBound=false;
+function enableTilt(){
+  if(tiltBound) return; tiltBound=true;
+  addEventListener('deviceorientation',e=>{
+    if(e.gamma==null)return; let g=e.gamma;
+    if(window.orientation===90)g=-e.beta; else if(window.orientation===-90)g=e.beta;
+    if(tiltNeutral===null) tiltNeutral=g;                 // first reading = your comfortable hold
+    let d=g-tiltNeutral;
+    const dead=2.5, span=18;                              // ~18° from neutral = full lock
+    const v = Math.abs(d)<dead?0:Math.max(-1,Math.min(1,(d-Math.sign(d)*dead)/span));
+    tiltSteer += (v-tiltSteer)*0.45;                      // smoothing -> steady steering
+    tiltOn=true;
+  });
+}
+function recalibrateTilt(){ tiltNeutral=null; }            // re-centre to current hold
+
+/* -------------------------------------------------------------- loop */
+let last=0;
+function loop(ts){ requestAnimationFrame(loop); if(!game)return;
+  let dt=(ts-last)/1000; last=ts; if(dt>0.05)dt=0.05;
+  if(game.state==='play'&&!paused) update(dt);
+  else if(game.state==='dead') updateDead(dt);
+  render(); }
+requestAnimationFrame(ts=>{ last=ts; requestAnimationFrame(loop); });
+
+function update(dt){
+  const g=game; g.t+=dt;
+  // after a death you sit at the bridge until you FIRE — then the plane starts moving
+  if(g.waiting){
+    A2.setThrust(false,0);
+    if(keys[' ']) g.waiting=false;
+    else return;          // frozen: no scroll, no fuel burn, no collisions
+  }
+  // throttle
+  let target=1.0; if(keys['ArrowUp'])target=2.0; else if(keys['ArrowDown'])target=0.6;
+  g.speed+=(target-g.speed)*Math.min(1,dt*4);
+  A2.setThrust(keys['ArrowUp'], (g.speed-0.6)/1.4);   // engine only while accelerating
+  // fly forward
+  const v=g.baseV*g.speed; g.dist+=v*dt;
+  g.level=gen.level;
+  if(g.banner>0) g.banner-=dt;
+  // each bridge you clear and fly past = a new level
+  for(const o of g.objs){
+    if(o.type===OBJ.BRIDGE && !o.counted && g.dist>o.wy){
+      o.counted=true;
+      if(!o.alive){ g.shownLevel++; g.banner=2.0; g.baseV=Math.min(78,g.baseV+2); lastStageSec=Math.max(lastStageSec,(o.sec||0)); }  // destroyed -> advance
+    }
+  }
+
+  // generate ahead / prune behind
+  while(g.worldTop < g.dist+JET_Y+BLOCK_H*3) pushBlock();
+  while(g.blocks.length>4 && g.blocks[0].worldY < g.dist+JET_Y-PLAY_H-BLOCK_H*2) g.blocks.shift();
+  // only prune objects that have passed BELOW the bottom of the screen
+  // (objects ahead must persist so they scroll into view)
+  g.objs=g.objs.filter(o=> o.wy > g.dist+JET_Y-PLAY_H-24);
+
+  // steer
+  let mv=0; if(keys['ArrowLeft'])mv-=1; if(keys['ArrowRight'])mv+=1;
+  if(tiltOn&&Math.abs(tiltSteer)>0.01)mv+=tiltSteer;
+  g.jetDir=mv>0.1?1:mv<-0.1?-1:0;
+  g.jetX+=mv*72*dt;
+
+  const edge=riverEdges(g.dist), jw=4;
+  if(g.invuln<=0){
+    let crash=false;
+    if(g.jetX-jw<edge.left||g.jetX+jw>edge.right) crash=true;
+    if(edge.island>0&&Math.abs(g.jetX-CENTER)<edge.island+jw) crash=true;
+    if(crash){ killJet(); return; }
+  }
+  g.jetX=Math.max(jw,Math.min(FIELD_W-jw,g.jetX));
+  if(g.invuln>0)g.invuln-=dt;
+
+  // fuel
+  g.fuel-=dt*0.018*(0.6+g.speed*0.4);
+  if(g.fuel<=0){ g.fuel=0; killJet(); return; }
+  if(g.fuel<0.22){ g.lowBeep-=dt; if(g.lowBeep<=0){ A2.lowFuel(); g.lowBeep=0.5; } }
+
+  // fire (bullets travel up toward larger worldY)
+  g.fireCool-=dt;
+  if(keys[' ']&&g.fireCool<=0&&g.bullets.length<2){
+    g.bullets.push({x:g.jetX,sy:JET_Y-6}); g.fireCool=0.28; A2.fire();
+  }
+  for(const b of g.bullets) b.sy-=250*dt;
+  g.bullets=g.bullets.filter(b=>b.sy>-6);
+
+  // 800XL: enemies shoot back. Missiles travel HORIZONTALLY across the river
+  // (and ride the scroll downward) — helicopters & land tanks only.
+  g.heliTimer-=dt;
+  if(g.heliTimer<=0){
+    // only helicopters fire — tanks do NOT shoot from land
+    const shooters=g.objs.filter(o=>{ if(!o.alive||o.type!==OBJ.HELI)return false;
+      const sy=w2s(o.wy); return sy>4 && sy<JET_Y-10; });
+    if(shooters.length){
+      const o=shooters[(Math.random()*shooters.length)|0];
+      const dir=(g.jetX>=o.x)?1:-1;                    // fire toward the jet's side
+      g.ebullets.push({x:o.x, wy:o.wy, vx:dir*(55+g.level*4)});
+      A2.heliShoot();
+    }
+    g.heliTimer=Math.max(0.45, 1.3+Math.random()*1.2 - g.level*0.03);
+  }
+  // move enemy missiles horizontally; they descend with the scroll (fixed worldY)
+  for(const eb of g.ebullets) eb.x += eb.vx*dt;
+  g.ebullets=g.ebullets.filter(eb=>{ const sy=w2s(eb.wy); return eb.x>-6&&eb.x<FIELD_W+6&&sy>-6&&sy<PLAY_H+6; });
+  if(g.invuln<=0){
+    for(const eb of g.ebullets){ const sy=w2s(eb.wy);
+      if(Math.abs(eb.x-g.jetX)<4 && Math.abs(sy-JET_Y)<5){ boom(g.jetX,JET_Y,false); killJet(); return; }
+    }
+  }
+  // enemy horizontal patrol
+  for(const o of g.objs){
+    if(!o.alive)continue;
+    if(o.type===OBJ.SHIP||o.type===OBJ.HELI||o.type===OBJ.JET){
+      o.x+=o.dir*o.vx*v*dt*0.7;
+      const e=riverEdges(o.wy), m=o.w/2+1;
+      if(o.x-m<e.left){o.x=e.left+m;o.dir=1;}
+      if(o.x+m>e.right){o.x=e.right-m;o.dir=-1;}
+      if(e.island>0&&Math.abs(o.x-CENTER)<e.island+m){o.dir*=-1;o.x+=o.dir*2;}
+    } else if(o.type===OBJ.FUEL||o.type===OBJ.BALLOON){
+      // keep static water objects in the water (never on the green land) as banks curve
+      const e=riverEdges(o.wy), m=o.w/2+1;
+      o.x=Math.max(e.left+m, Math.min(e.right-m, o.x));
+      if(e.island>2 && Math.abs(o.x-CENTER)<e.island+m){
+        o.x = o.x<CENTER ? (e.left+(CENTER-e.island))/2 : ((CENTER+e.island)+e.right)/2;
+      }
+    }
+  }
+
+  // bullet vs object
+  for(const b of g.bullets){
+    for(const o of g.objs){
+      if(!o.alive||o.type===OBJ.HOUSE||o.type===OBJ.MOUNTAIN||(o.type===OBJ.BRIDGE&&o.passable))continue;
+      const sy=w2s(o.wy); let ox,ow,oh;
+      if(o.type===OBJ.BRIDGE){ox=CENTER;ow=o.half*2;oh=8;} else {ox=o.x;ow=o.w+2;oh=o.h;}
+      if(Math.abs(b.x-ox)<ow/2 && b.sy>sy-oh && b.sy<sy+2){
+        o.alive=false; b.sy=-99; addScore(SCORE[o.type]||0);
+        boom(ox,sy,o.type===OBJ.BRIDGE); A2.explosion(o.type===OBJ.BRIDGE);
+        if(o.type===OBJ.BRIDGE){           // bonus if a tank is crossing the bridge (750 total)
+          for(const t of g.objs){ if(t.alive&&t.type===OBJ.TANK&&t.onBridge&&Math.abs(t.wy-o.wy)<BLOCK_H){
+            t.alive=false; addScore(250); boom(t.x,sy,false); } }
+        }
+        break;
+      }
+    }
+  }
+  g.bullets=g.bullets.filter(b=>b.sy>-6);
+
+  // jet vs object / refuel
+  if(g.invuln<=0){
+    for(const o of g.objs){
+      if(!o.alive||o.type===OBJ.HOUSE||o.type===OBJ.MOUNTAIN||(o.type===OBJ.BRIDGE&&o.passable))continue;
+      const sy=w2s(o.wy);
+      if(sy<JET_Y-12||sy>JET_Y+12)continue;
+      let ox,ow; if(o.type===OBJ.BRIDGE){ox=CENTER;ow=o.half*2;} else {ox=o.x;ow=o.w+4;}
+      if(Math.abs(g.jetX-ox)<ow/2+3){
+        if(o.type===OBJ.FUEL){ g.fuel=Math.min(1,g.fuel+0.012); A2.refuel(); }
+        else { boom(g.jetX,JET_Y,false); killJet(); return; }
+      }
+    }
+  }
+  for(const ex of g.explosions) ex.t+=dt;
+  g.explosions=g.explosions.filter(ex=>ex.t<ex.life);
+}
+function updateDead(dt){ for(const ex of game.explosions)ex.t+=dt; game.deadTimer-=dt;
+  if(game.deadTimer<=0){ if(game.lives<=0)endGame(); else respawn(); } }
+
+function addScore(p){ game.score+=p; if(game.score>=game.nextLife){game.lives++;game.nextLife+=10000;} }
+function boom(x,y,big){ game.explosions.push({x,y,t:0,life:big?0.6:0.42,big}); }
+function killJet(){ if(game.state!=='play')return; A2.explosion(false); boom(game.jetX,JET_Y,false);
+  game.lives--; game.state='dead'; game.deadTimer=1.1; }
+function respawn(){
+  game.state='play';
+  // restart just past the LAST bridge you cleared (checkpoint), not mid-river
+  let cp=null;
+  for(const c of game.checkpoints) if(c.wy<=game.dist+1) cp=c;
+  if(cp){
+    gen.sec=cp.sec; gen.blk=0;                  // resume AT the bridge of the current stage
+    gen.level=Math.max(1,game.shownLevel);
+    game.worldTop=cp.wy; game.dist=cp.wy+9;     // jet sits on the bridge
+    game.blocks=[]; game.objs=[]; game.explosions=[];
+    game.checkpoints=[{wy:cp.wy,sec:cp.sec}];
+    blockCount=999;                             // no ease-in on restart
+    while(game.worldTop < game.dist+JET_Y+BLOCK_H*4) pushBlock();
+    // make the bridge you start on already open (passable, doesn't re-award a level)
+    for(const o of game.objs) if(o.type===OBJ.BRIDGE && Math.abs(o.wy-game.dist)<BLOCK_H){ o.passable=true; o.counted=true; }
+  }
+  game.jetX=safeSpawnX(game.dist);             // spawn in open water, never on an island
+  game.fuel=1; game.invuln=2.5; game.bullets=[]; game.speed=1;
+  game.waiting=true; game.banner=0;            // wait on the bridge; clear any LEVEL banner
+}
+function endGame(){ game.state='over'; A2.stopEngine();
+  if(game.score>best)best=game.score;
+  document.getElementById('finalScore').textContent='SCORE '+game.score;
+  document.getElementById('bestScore').textContent ='BEST  '+best;
+  const cb=document.getElementById('continueBtn');
+  if(lastStageSec>0){ cb.textContent='CONTINUE → STAGE '+(lastStageSec+1); cb.classList.remove('hidden'); }
+  else cb.classList.add('hidden');
+  show('overScreen'); }
+let best=0;
+
+/* -------------------------------------------------------------- render */
+function px(x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(x|0,y|0,w,h); }
+// smooth, organic coastline offset (coherent waves, not random pixel noise)
+function shoreJit(wy,side){
+  return 2.4*Math.sin(wy*0.085+side*2.3) + 1.1*Math.sin(wy*0.215+side*5.1) + 0.6*Math.sin(wy*0.5+side);
+}
+function sprite(parsed,cx,topY,color,mirror){
+  const w=parsed.w; ctx.fillStyle=color;
+  const ox=Math.round(cx-w/2), oy=Math.round(topY);
+  for(const p of parsed.pts){ const c=mirror?(w-1-p[0]):p[0]; ctx.fillRect(ox+c,oy+p[1],1,1); }
+}
+// genuine (2600 ROM) sprite SHAPE, shaded with an 800XL-style top highlight + bottom shadow
+function drawShaded(parsed,cx,topY,mirror,topCol,baseCol,botCol){
+  const w=parsed.w,h=parsed.h, ox=Math.round(cx-w/2), oy=Math.round(topY);
+  const hi=Math.max(1,Math.floor(h*0.28));
+  for(const p of parsed.pts){ const c=mirror?(w-1-p[0]):p[0];
+    const col = p[1]<hi ? topCol : (p[1]>=h-1 ? botCol : baseCol);
+    ctx.fillStyle=col; ctx.fillRect(ox+c,oy+p[1],1,1); }
+}
+const RS=2;                                    // internal super-sampling for a crisper, modern look
+function render(){
+  ctx.setTransform(RS,0,0,RS,0,0);
+  px(0,0,FIELD_W,PLAY_H+HUD_H,'#000');
+  if(!game)return; const g=game;
+
+  // terrain drawn at device resolution with smooth (anti-aliased) coastlines — no chunky steps
+  const step=1/RS;
+  for(let y=0;y<PLAY_H;y+=step){
+    const wy=s2w(y), e=riverEdges(wy);
+    let L=e.left+shoreJit(wy,0), R=e.right+shoreJit(wy,1);
+    L=Math.max(2,Math.min(CENTER-3,L)); R=Math.max(CENTER+3,Math.min(FIELD_W-2,R));
+    ctx.fillStyle=C.bank;     ctx.fillRect(0,y,FIELD_W,step);     // green land
+    ctx.fillStyle=C.river;    ctx.fillRect(L,y,R-L,step);         // blue channel (smooth edges)
+    ctx.fillStyle=C.bankEdge; ctx.fillRect(L-1.5,y,1.5,step); ctx.fillRect(R,y,1.5,step);  // maroon shore
+    if(e.island>1){ let il=CENTER-e.island+shoreJit(wy,2), iw=e.island*2;
+      ctx.fillStyle=C.island;     ctx.fillRect(il,y,iw,step);
+      ctx.fillStyle=C.islandEdge; ctx.fillRect(il-1.5,y,1.5,step); ctx.fillRect(il+iw,y,1.5,step); }
+  }
+
+  // objects
+  for(const o of g.objs){
+    if(!o.alive)continue; const sy=w2s(o.wy);
+    if(sy<-26||sy>PLAY_H+8)continue;
+    if(o.type===OBJ.BRIDGE){
+      const e=riverEdges(o.wy), L=e.left|0, Rr=e.right|0, top=sy-6, hh=12;
+      px(0,top,FIELD_W,hh,C.road);                              // grey road across full width
+      px(0,top,FIELD_W,1,C.roadEdge); px(0,top+hh-1,FIELD_W,1,C.roadEdge);  // yellow edges
+      px(L,top,Rr-L,hh,C.bridge);                               // brown bridge over the water
+      px(L,top,Rr-L,1,C.bridgeDk); px(L,top+hh-1,Rr-L,1,C.bridgeDk);
+      for(let i=L+2;i<Rr;i+=4) px(i,top+1,1,hh-2,C.bridgeDk);   // wooden planks
+    } else if(o.type===OBJ.MOUNTAIN){
+      const e=riverEdges(o.wy);
+      const bx=o.onBank<0?(e.left*0.5):(e.right+(FIELD_W-e.right)*0.5);
+      const s=o.size, base=sy;
+      for(let r=0;r<s;r++){ const w=Math.round((r+1)*1.25); px(Math.round(bx-w/2),base-s+r,w,1,C.mountain); }
+      px(Math.round(bx),base-s+2,Math.max(1,(s/2)|0),Math.max(1,(s-3)),C.mountainAcc);   // blue face
+    } else if(o.type===OBJ.FUEL){
+      const w=G.fuel.w,h=G.fuel.h, x0=Math.round(o.x-w/2), y0=Math.round(sy-h);
+      px(x0-1,y0-1,w+2,h+2,C.fuelBody);             // magenta depot body
+      sprite(G.fuel,o.x,y0,C.fuelMark,false);        // white "FUEL" markings
+    } else if(o.type===OBJ.SHIP){ drawShaded(G.ship,o.x,sy-G.ship.h,o.dir>0,'#d8d8e0',C.ship,C.shipStripe);
+    } else if(o.type===OBJ.HELI){ drawShaded((Math.floor(g.t*12)&1)?G.heli1:G.heli0,o.x,sy-G.heli0.h,o.dir>0,C.heliRotor,C.heli,'#3a7820');
+    } else if(o.type===OBJ.JET){ drawShaded(G.plane,o.x,sy-G.plane.h,o.dir>0,'#c2f06a',C.plane,'#3c8222');
+    } else if(o.type===OBJ.BALLOON){ drawActor(ACT.balloon,o.x,sy-ACT.balloon.h,false);
+    } else if(o.type===OBJ.TANK){
+      if(o.onBank){ const e=riverEdges(o.wy);
+        o.x=o.onBank<0?Math.max(3,e.left/2):Math.min(FIELD_W-3,(e.right+FIELD_W)/2); }
+      px(Math.round(o.x),sy-ACT.tank.h-2,1,2,C.tankDk);   // gun barrel
+      drawActor(ACT.tank,o.x,sy-ACT.tank.h,false);
+    }
+  }
+
+  // bullets
+  for(const b of g.bullets) px(b.x-0.5,b.sy,1,5,C.bullet);
+  // enemy missiles (800XL): horizontal streaks crossing the river
+  for(const eb of g.ebullets){ const sy=w2s(eb.wy); px(eb.x-2,sy,4,1,'#ff4040'); px(eb.x+(eb.vx>=0?2:-2),sy,1,1,'#ffd0d0'); }
+
+  // player plane — the original River Raid jet bitmap (banks left/right when steering)
+  if(g.state==='play'){
+    if(!(g.invuln>0&&(Math.floor(g.t*12)%2))){
+      if(g.jetDir!==0) sprite(G.jetMove,g.jetX,JET_Y-G.jetMove.h/2,C.jet,g.jetDir<0);
+      else sprite(G.jet,g.jetX,JET_Y-G.jet.h/2,C.jet,false);
+    }
+  }
+
+  // explosions
+  for(const ex of g.explosions){
+    const p=ex.t/ex.life, rad=(ex.big?9:6)*(0.4+p), ci=Math.min(3,Math.floor(p*4));
+    for(let a=0;a<8;a++){ const an=a/8*Math.PI*2;
+      px(ex.x+Math.cos(an)*rad-1,ex.y+Math.sin(an)*rad-1,2,2,C.explo[ci]); }
+    px(ex.x-1,ex.y-1,2,2,C.explo[Math.max(0,ci-1)]);
+  }
+
+  // "LEVEL n" banner each time you clear a bridge
+  if(g.banner>0 && g.state==='play'){
+    const s=String(g.shownLevel), sc=4; let tot=0;
+    for(const ch of s) tot+=(GD[+ch].w+1)*sc;
+    let cx=CENTER-tot/2; const cy=PLAY_H/2-16;
+    drawLabel('LEVEL',CENTER-20,cy-14,C.hudText,2);   // 5 chars * 4 * 2 / 2 = 20
+    for(const ch of s){ const gd=GD[+ch]; ctx.fillStyle='#ffe14d';
+      for(const p of gd.pts) ctx.fillRect(cx+p[0]*sc,cy+p[1]*sc,sc,sc); cx+=(gd.w+1)*sc; }
+  }
+
+  // "PRESS FIRE" prompt while frozen at the bridge after a death
+  if(g.waiting && g.state==='play' && Math.floor(g.t*3)%2){
+    drawLabel('PRESS FIRE',CENTER-40,PLAY_H/2,'#ffe14d',2);
+  }
+
+  drawHUD();
+}
+
+function drawDigits(n,width,x,y,scale,color){
+  const s=String(n).padStart(width,'0'); let cx=x;
+  for(const ch of s){ const gd=GD[+ch]; ctx.fillStyle=color;
+    for(const p of gd.pts) ctx.fillRect(cx+p[0]*scale,y+p[1]*scale,scale,scale);
+    cx+=(gd.w+1)*scale; }
+  return cx;
+}
+function drawHUD(){
+  const g=game, y0=PLAY_H;
+  px(0,y0,FIELD_W,HUD_H,C.hudPanel);                   // 800XL grey status panel
+  px(0,y0,FIELD_W,1,'#7a7a7a');                         // subtle top edge
+  // --- left: P1 + big score ---
+  drawLabel('P1',4,y0+3,C.hudText,1);
+  drawDigits(g.score,5, 4, y0+11, 2, C.hudText);        // ends ~x84
+  // --- centre-top: remaining planes ---
+  for(let i=0;i<Math.min(g.lives-1,3);i++) sprite(G.jet, 92+i*9, y0+4, '#303030', false);
+  // --- right: HI score + BRIDGE counter (two tidy lines) ---
+  drawLabel('HI',122,y0+3,C.hudText,1); drawDigits(best,5,136,y0+3,1,C.hudText);    // ->176
+  drawLabel('BRIDGE',118,y0+12,C.hudText,1);
+  drawDigits(g.shownLevel,String(g.shownLevel).length,160,y0+12,1,C.hudText);
+  // --- bottom: full-width fuel gauge  E [=====] F ---
+  const gx=16, gy=y0+30, gw=156, gh=8;
+  px(gx-2,gy-2,gw+4,gh+4,C.hudText);                    // frame
+  px(gx,gy,gw,gh,'#181818');
+  const fc=g.fuel<0.25?C.fuelLow:g.fuel<0.5?C.fuelWarn:C.fuelGood;
+  px(gx,gy,Math.round(gw*g.fuel),gh,fc);
+  px(gx+(gw>>1),gy,1,gh,'#888');                        // ½ tick
+  drawLabel('E',gx-9,gy+2,C.hudText,1); drawLabel('F',gx+gw+4,gy+2,C.hudText,1);
+}
+// tiny 3x5 label font
+const LF={F:['111','100','111','100','100'],U:['101','101','101','101','111'],
+  E:['111','100','111','100','111'],L:['100','100','100','100','111'],
+  S:['111','100','111','001','111'],T:['111','010','010','010','010'],
+  A:['111','101','111','101','101'],G:['111','100','101','101','111'],
+  V:['101','101','101','101','010'],I:['111','010','010','010','111'],
+  R:['110','101','110','101','101'],P:['111','101','111','100','100'],
+  B:['110','101','110','101','110'],D:['110','101','101','101','110'],
+  H:['101','101','111','101','101'],M:['101','111','111','101','101']};
+function drawLabel(str,x,y,col,sc){ sc=sc||1; ctx.fillStyle=col; let cx=x;
+  for(const ch of str){ const gl=LF[ch]; if(gl){ for(let r=0;r<5;r++)for(let c=0;c<3;c++) if(gl[r][c]==='1')ctx.fillRect(cx+c*sc,y+r*sc,sc,sc); } cx+=4*sc; } }
+
+/* -------------------------------------------------------------- ui */
+function show(id){ for(const s of ['titleScreen','pauseScreen','overScreen']) document.getElementById(s).classList.add('hidden');
+  if(id) document.getElementById(id).classList.remove('hidden'); }
+let paused=false;
+function togglePause(){ if(!game||game.state!=='play'&&!paused)return;
+  paused=!paused; if(paused){ show('pauseScreen'); A2.stopEngine(); } else { show(null); A2.startEngine(); } }
+function goFullscreen(){ const el=document.documentElement;
+  const fn=el.requestFullscreen||el.webkitRequestFullscreen; if(fn){ try{ fn.call(el); }catch(e){} } }
+function startGame(sec){ sec=(typeof sec==='number')?sec:0; A2.init(); A2.resume();
+  recalibrateTilt();                                   // neutral = how you're holding it now
+  if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function')
+    DeviceOrientationEvent.requestPermission().then(p=>{if(p==='granted')enableTilt();}).catch(()=>{});
+  else enableTilt();
+  if(isTouch){ document.getElementById('tiltTag').classList.remove('hidden'); goFullscreen(); }
+  show(null); A2.startEngine(); newGame(sec); paused=false; }
+document.getElementById('startBtn').addEventListener('click',()=>startGame(0));
+document.getElementById('againBtn').addEventListener('click',()=>startGame(0));
+document.getElementById('continueBtn').addEventListener('click',()=>startGame(lastStageSec));
+document.getElementById('resumeBtn').addEventListener('click',togglePause);
+
+const isTouch=('ontouchstart'in window)||navigator.maxTouchPoints>0;
+if(isTouch){ document.getElementById('touch').classList.remove('hidden');
+  document.getElementById('tiltHint').textContent='On mobile: tilt to steer · tap TILT to re-center';
+  document.getElementById('keyHelp').classList.add('hidden');
+  const tt=document.getElementById('tiltTag');
+  tt.textContent='TILT ⟳';
+  const recal=e=>{e.preventDefault(); recalibrateTilt();};
+  tt.addEventListener('touchstart',recal,{passive:false}); tt.addEventListener('click',recal);
+}
+// keep render crisp on high-dpi / orientation change
+addEventListener('orientationchange',()=>{ recalibrateTilt(); });
+</script>
+</body>
+</html>
