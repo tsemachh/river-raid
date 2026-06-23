@@ -278,7 +278,7 @@ const PLAY_H  = 172;          // playfield height
 const HUD_H   = 42;           // bottom status panel
 const CENTER  = FIELD_W/2;
 const BLOCK_H = 31;           // ~5-6 blocks visible — matches the original's on-screen density
-const SECTION_BLOCKS = 16;
+const SECTION_BLOCKS = 36;    // longer sections between bridges (pygame-River-Raid feel)
 const JET_Y   = PLAY_H - 26;  // jet's fixed screen row (near bottom)
 // remap raw map half-widths (0..60, in the old 160 field) to roomier 800XL-like
 // proportions: thick green banks, channels never brutally tight.
@@ -315,6 +315,59 @@ const C={
   fuelGood:'#3ad13a', fuelWarn:'#e8c020', fuelLow:'#ff3030'
 };
 
+/* ---- terrain generator ported from the pygame-River-Raid project (MIT,
+   andy-omelyanenko): a meandering river width + slow x-offset drift + islands
+   with gaps + a narrow bridge neck at each section. Pre-generated deterministically. */
+const T_TOTAL=70000;
+const tL=new Int16Array(T_TOTAL), tR=new Int16Array(T_TOTAL);
+const tIL=new Int16Array(T_TOTAL), tIR=new Int16Array(T_TOTAL);
+(function genTerrain(){
+  let seed=0x6a3f17c5>>>0;
+  const RB=()=>{ seed=(Math.imul(seed,1664525)+1013904223)>>>0; return (seed>>>15)&0xFF; };  // 0..255
+  const RI=(a,b)=>a+Math.floor(RB()/256*(b-a+1));
+  const MID=FIELD_W>>1, BRW=24, SETTLE=64, MAXX=12;
+  const BRL=SECTION_BLOCKS*BLOCK_H;            // bridge spacing (one per section)
+  let width=80, xoff=0, dir=0, Nx=0, Nw=0, target=80;
+  let Nisl=0, islMax=0, islBot=0, islTop=0, islH=0, gap=0;
+  for(let L=0;L<T_TOTAL;L++){
+    const inSec=L%BRL, area=Math.floor(L/BRL);
+    if(gap>0) gap--;
+    const islandsGap = area<3?2*PLAY_H : area<6?PLAY_H : (PLAY_H>>1);
+    // spawn an island mid-section, in wide enough water, with a gap since the last one
+    if(inSec>SETTLE && (BRL-inSec)>PLAY_H && Nw===0 && Nisl===0 && width>=96 && gap===0 && RB()%9===1 && area>0){
+      islH=RI(40, Math.min(PLAY_H, 70+area*5)); Nisl=islH;
+      islMax=RI(16,46); islBot=RI(10,islMax); islTop=RI(10,islMax);
+    }
+    // slow x-offset drift (the river meanders left/right), hard-bounded
+    if(Nx<=0){ dir=RB()%3-1; Nx=RB()%8+4; }
+    xoff+=dir*(RB()%2+1); Nx--;
+    if(xoff>MAXX){ xoff=MAXX; dir=-1; } else if(xoff<-MAXX){ xoff=-MAXX; dir=1; }
+    if(Nisl===0){
+      if(inSec<4){ width=BRW; target=RI(64,112); Nw=SETTLE; }        // bridge neck, then opens up
+      else if(RB()%150===1 && Nw===0){ target=RI(46,112); Nw=SETTLE; }  // occasional width change
+      if((BRL-inSec)<=SETTLE){ target=BRW; Nw=SETTLE; }              // narrow into the next bridge
+    } else {
+      const iw = Nisl===islH?islBot : (Nisl===1?islTop : RI((islTop+islBot)>>1, islMax));
+      tIL[L]=MID-(iw>>1)+xoff; tIR[L]=MID+(iw>>1)+xoff;
+      Nisl--; if(Nisl===0) gap=islandsGap;
+    }
+    if(Nw>0){ width += Math.trunc((target-width)/Nw); Nw--; }
+    let l=MID-(width>>1)+xoff, r=MID+(width>>1)+xoff;
+    l=Math.max(2,Math.min(FIELD_W-8,l)); r=Math.max(l+6,Math.min(FIELD_W-2,r));
+    tL[L]=l; tR[L]=r;
+  }
+  // smooth the banks into gentle curves (removes per-line jaggedness)
+  const sm=(arr)=>{ const out=new Int16Array(T_TOTAL), R=4;
+    for(let L=0;L<T_TOTAL;L++){ let s=0,n=0; for(let k=-R;k<=R;k++){ const i=L+k; if(i>=0&&i<T_TOTAL){ s+=arr[i]; n++; } } out[L]=Math.round(s/n); }
+    arr.set(out); };
+  sm(tL); sm(tR);
+  // smooth island edges within each island run (skip the empty gaps)
+  const smI=(arr)=>{ const out=new Int16Array(T_TOTAL), R=3;
+    for(let L=0;L<T_TOTAL;L++){ if(arr[L]<=0){ out[L]=arr[L]; continue; } let s=0,n=0; for(let k=-R;k<=R;k++){ const i=L+k; if(i>=0&&i<T_TOTAL&&arr[i]>0){ s+=arr[i]; n++; } } out[L]=Math.round(s/n); }
+    arr.set(out); };
+  smI(tIL); smI(tIR);
+})();
+
 /* ----------------------------------------------------------- 16-bit LFSR */
 let R_lo=0x14, R_hi=0xA8;
 function lfsrSeed(){ R_lo=0x14; R_hi=0xA8; }
@@ -329,47 +382,72 @@ function lfsrNext(){
   R_lo=nlo; R_hi=nhi;
 }
 
-/* --------------------------------------------------------- generator */
+/* --------------------------------------------------------- generator
+   Live port of Carol Shaw's section generator (the 800XL/2600 share it). The
+   16-bit LFSR (seed $A814) drives BOTH river width and objects in lockstep, so
+   the layout is the authentic deterministic sequence — and endless, like the
+   real cartridge (no looping map). Block 0 of each section carries the bridge. */
+const ISL_FLAG=0x80, CHG_FLAG=0x40;
 let gen={};
-function resetGenerator(){
-  lfsrSeed();
-  gen={ sec:0, blk:0, level:1 };   // index into the real map data
-}
-// Build the next block straight from the extracted original map; the LFSR now
-// only drives object selection (which enemy / fuel / direction), not geometry.
-function nextBlockDesc(){
-  const sec=gen.sec, blk=gen.blk;
-  const half=mapHalf(MAP_HALF[sec][blk]);
-  // keep an open river run for the first blocks after a bridge; islands return afterward
-  const islandHalf=(blk>=1&&blk<=2)?0:(MAP_ISL[sec][blk]?Math.round(MAP_ISL[sec][blk]*0.66):0);
-  const isBridge=(blk===0);          // block 0 = the narrow bridge channel
-  lfsrNext();
+function resetGenerator(){ lfsrSeed(); gen={ blk:0, level:1, pf:0, prevId:8, sec:0 }; }
+// PF pattern id (2..14, higher = thicker bank) -> river half-width in field px
+function halfForId(id){ return Math.round(64 - (id-2)*(44/12)); }   // 64 (wide) .. ~20 (narrow)
 
+function nextBlockDesc(){
+  const isBridge=(gen.blk===0);
+  // RNG snapshot at each section start, so respawn/bridge-select can replay it exactly
+  const snap = isBridge ? {lo:R_lo,hi:R_hi,blk:0,level:gen.level,pf:gen.pf,prevId:gen.prevId,sec:gen.sec} : null;
+  lfsrNext();
+  const lvl=Math.min(48,gen.level);
+  const straight=(lvl&1)===1;
+
+  let id=8, island=false;
+  if(isBridge){ id=14; gen.pf=0; }                 // narrow bridge neck
+  else if(straight){ id=7; gen.pf=0; }             // straight (no-island) sections
+  else {
+    // island flag state machine (00->01/00, 01->11, 10->00, 11->10/11)
+    let s=gen.pf; const isl=(s&ISL_FLAG)!==0, chg=(s&CHG_FLAG)!==0;
+    if(isl!==chg) s = chg ? (ISL_FLAG|CHG_FLAG) : 0;
+    else if((R_lo&0x30)===0) s = isl ? (s&~CHG_FLAG) : (s|CHG_FLAG);
+    gen.pf=s; island=(s&ISL_FLAG)!==0;
+    let r=R_lo&0x0F; if(r<2) r+=2;                  // 2..15
+    const maxId = lvl<5 ? 8 : (island?13:14);       // early levels limit the valley width
+    id=Math.min(r,maxId);
+  }
+  gen.prevId=id;
+  const half = isBridge ? 22 : halfForId(id);
+  const islandHalf = (island && gen.blk>2) ? Math.max(8,Math.round(half*0.5)) : 0;
+
+  // --- object selection: spawn model adapted from the pygame-River-Raid project (MIT,
+  //     andy-omelyanenko) — heli-dominant mix, fuel on rolls 3-4, balloons on a 0 / narrow river ---
   let obj=OBJ.NONE, dir=(R_lo&0x80)?1:-1;
   if(isBridge){ obj=OBJ.BRIDGE; }
-  else if(blk===1){ obj=(R_lo&0x40)?OBJ.NONE:OBJ.FUEL; }   // reserved block after the bridge: never an enemy
+  else if(gen.blk===1){ obj=OBJ.NONE; }              // open run right after the bridge
   else {
-    const lvl=Math.min(48,gen.level);
-    const a=((64-lvl)<<1)&0xFF;             // enemy threshold: ~126 (bridge 1) .. ~32 (bridge 48)
-    if(R_hi>a){ obj=ENEMY_TAB[R_hi&(lvl>=3?7:1)];
-      if(lvl>=4 && (R_lo&0x07)===0) obj=OBJ.BALLOON; }   // 800XL extra: balloon blockade from bridge 4
-
-    else if(!(R_lo&0x40)){ obj=OBJ.FUEL; }            // ~half the remainder -> fuel
-    else { obj=OBJ.NONE; }                             // the "house" slot -> open water (no land objects)
+    const maxRnd = lvl<10 ? 7 : 15;
+    const rnd = R_hi % (maxRnd+1);
+    if(rnd===3||rnd===4) obj=OBJ.FUEL;               // fuel
+    else if(rnd>=12) obj=OBJ.NONE;                    // open water (only when maxRnd=15)
+    else if(rnd===0) obj=OBJ.BALLOON;
+    else if(rnd===1) obj=OBJ.SHIP;
+    else obj=OBJ.HELI;                                // rnd 2,5,6,7,8,9,10,11 -> helicopter
   }
 
-  const b={ sec, blk, isBridge, half, islandHalf, obj, dir, rx:(R_lo&0x3F), onBank:(R_hi&1)?1:-1 };
-  if(obj!==OBJ.NONE && obj!==OBJ.BRIDGE && obj!==OBJ.HOUSE){
-    const inner=Math.max(6,half-8), span=Math.max(8,inner*2);
-    let x=CENTER-inner+(b.rx/63)*span;
+  const b={ sec:gen.sec, blk:gen.blk, isBridge, half, islandHalf, obj, dir, rx:(R_lo&0x3F), onBank:(R_hi&1)?1:-1, snap };
+  if(obj!==OBJ.NONE && obj!==OBJ.BRIDGE){
+    const inner=Math.max(6,half-8);
+    let x=CENTER-inner+(b.rx/63)*(inner*2);
     if(islandHalf>2 && Math.abs(x-CENTER)<islandHalf+6) x+=(x<CENTER?-1:1)*(islandHalf+8);
     b.objX=Math.max(8,Math.min(FIELD_W-8,x));
   }
 
   gen.blk++;
-  if(gen.blk>=16){ gen.blk=0; gen.sec=(gen.sec+1)%NSEC; gen.level=Math.min(48,gen.level+1); }
+  if(gen.blk>=SECTION_BLOCKS){ gen.blk=0; gen.level=Math.min(48,gen.level+1); gen.sec++; }
   return b;
 }
+// fast-forward the generator to the start of section n (deterministic, like the real game)
+function advanceToSection(n){ let guard=0; while(gen.sec<n && guard++<n*20+50) nextBlockDesc(); }
+function restoreSnap(s){ R_lo=s.lo; R_hi=s.hi; gen.blk=s.blk; gen.level=s.level; gen.pf=s.pf; gen.prevId=s.prevId; gen.sec=s.sec; }
 
 /* ----------------------------------------------------------------- audio */
 const A2=(()=>{
@@ -385,21 +463,25 @@ const A2=(()=>{
   function loopNoise(){ const b=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate), x=b.getChannelData(0);
     for(let i=0;i<x.length;i++)x[i]=Math.random()*2-1; return b; }
   function startEngine(){ if(!ctx||started)return;
-    // clean square-wave engine tone (the "nice" fly sound) through a lowpass
-    e1=ctx.createOscillator(); e1.type='square'; e1.frequency.value=55;
-    e2=ctx.createOscillator(); e2.type='triangle'; e2.frequency.value=110;  // soft octave for warmth
-    eNoiseGain=ctx.createGain(); eNoiseGain.gain.value=0.4;                  // mix for the octave
-    eF=ctx.createBiquadFilter(); eF.type='lowpass'; eF.frequency.value=900;
-    eGain=ctx.createGain(); eGain.gain.value=0;                              // silent unless thrusting
-    e1.connect(eF); e2.connect(eNoiseGain); eNoiseGain.connect(eF);
-    eF.connect(eGain); eGain.connect(master);
-    e1.start(); e2.start(); started=true; }
-  function stopEngine(){ if(!started)return; try{e1.stop();e2.stop();}catch(e){} started=false; }
+    // Atari "plane taking off" roar: rushing filtered noise + a rising turbine whine.
+    // The roar brightens and swells smoothly as you accelerate.
+    eNoiseSrc=ctx.createBufferSource(); eNoiseSrc.buffer=loopNoise(); eNoiseSrc.loop=true;
+    eF=ctx.createBiquadFilter(); eF.type='bandpass'; eF.frequency.value=520; eF.Q.value=0.9;
+    eNoiseGain=ctx.createGain(); eNoiseGain.gain.value=1.0;                  // air-roar mix
+    e1=ctx.createOscillator(); e1.type='sawtooth'; e1.frequency.value=120;   // turbine whine
+    wobGain=ctx.createGain(); wobGain.gain.value=0.10;                       // whine mix (subtle)
+    eGain=ctx.createGain(); eGain.gain.value=0;                              // master swell (silent at idle)
+    eNoiseSrc.connect(eF); eF.connect(eNoiseGain); eNoiseGain.connect(eGain);
+    e1.connect(wobGain); wobGain.connect(eGain);
+    eGain.connect(master);
+    eNoiseSrc.start(); e1.start(); started=true; }
+  function stopEngine(){ if(!started)return; try{eNoiseSrc.stop();e1.stop();}catch(e){} started=false; }
   function setThrust(on,s){ if(!started)return; const t=ctx.currentTime;
-    const f=60+s*80;
-    e1.frequency.setTargetAtTime(f,t,0.05); e2.frequency.setTargetAtTime(f*2,t,0.05);
-    eF.frequency.setTargetAtTime(700+s*600,t,0.08);
-    eGain.gain.setTargetAtTime(on?0.10:0.0,t,0.05); }
+    if(!on){ eGain.gain.setTargetAtTime(0,t,0.20); return; }                 // spool down when coasting
+    // taking off: roar gets brighter + turbine whine rises + volume swells with throttle
+    eF.frequency.setTargetAtTime(480+s*2200,t,0.15);
+    e1.frequency.setTargetAtTime(110+s*260,t,0.15);
+    eGain.gain.setTargetAtTime(0.045+s*0.05,t,0.12); }
   function fire(){ if(!ctx)return; const t=ctx.currentTime;
     const o=ctx.createOscillator(),g=ctx.createGain(); o.type='square';
     o.frequency.setValueAtTime(1200,t); o.frequency.exponentialRampToValueAtTime(120,t+0.16);
@@ -438,17 +520,20 @@ ctx.imageSmoothingEnabled=false;
 let game=null, blockCount=0, lastStageSec=0;   // lastStageSec = furthest stage reached
 function newGame(startSec){
   startSec=startSec||0;
-  resetGenerator(); gen.sec=startSec%NSEC; gen.blk=0; gen.level=startSec+1;
-  blockCount = startSec>0 ? 999 : 0;             // skip the gentle intro when continuing
+  resetGenerator(); advanceToSection(startSec);   // generator now at the start of that section
+  blockCount = startSec>0 ? 999 : 0;              // skip the gentle intro when continuing
+  const worldStart=startSec*SECTION_BLOCKS*BLOCK_H;  // align terrain to this section/bridge
+  const initSnap={lo:R_lo,hi:R_hi,blk:gen.blk,level:gen.level,pf:gen.pf,prevId:gen.prevId,sec:gen.sec};
   game={ state:'play', score:0, lives:4, fuel:1.0, nextLife:10000, level:startSec+1,
-    dist:0, speed:1.0, baseV:Math.min(78,36+startSec*1.5),
-    blocks:[], worldTop:0,
+    dist:worldStart, speed:1.0, baseV:Math.min(78,36+startSec*1.5),
+    blocks:[], worldTop:worldStart,
     jetX:CENTER, jetDir:0,
     bullets:[], explosions:[], objs:[],
     fireCool:0, invuln:1.5, deadTimer:0, lowBeep:0, t:0,
-    shownLevel:startSec+1, banner:startSec>0?1.6:0, checkpoints:[{wy:0,sec:startSec%NSEC}],
+    shownLevel:startSec+1, banner:startSec>0?1.6:0, checkpoints:[{wy:worldStart,snap:initSnap,sec:startSec}],
     waiting:false, heliTimer:1.2, ebullets:[] };
-  while(game.worldTop < JET_Y + BLOCK_H*4) pushBlock();
+  while(game.worldTop < game.dist+JET_Y+BLOCK_H*4) pushBlock();
+  game.jetX=safeSpawnX(game.dist);                // start inside the (winding) channel
 }
 function pushBlock(){
   const b=nextBlockDesc();
@@ -457,19 +542,30 @@ function pushBlock(){
   if(blockCount<4){ b.obj=OBJ.NONE; b.isBridge=false; } // ease-in
   game.worldTop+=BLOCK_H; blockCount++;
   game.blocks.push(b);
-  if(b.isBridge){ game.checkpoints.push({wy:b.worldY, sec:b.sec});
+  if(b.isBridge && b.snap){ game.checkpoints.push({wy:b.worldY, snap:b.snap, sec:b.sec});
     if(game.checkpoints.length>6) game.checkpoints.shift(); }
   const cy=b.worldY+BLOCK_H/2;
-  const bridgeWy=b.worldY+9;          // sit in the narrow neck (not the widening part)
-  if(b.obj===OBJ.BRIDGE) game.objs.push({type:OBJ.BRIDGE,wy:bridgeWy,half:b.half,sec:b.sec,alive:true});
+  const bridgeWy=b.worldY+4;
+  if(b.obj===OBJ.BRIDGE) game.objs.push({type:OBJ.BRIDGE,wy:bridgeWy,sec:b.sec,alive:true});
   else if(b.obj!==OBJ.NONE){
     const dim=b.obj===OBJ.FUEL?G.fuel:b.obj===OBJ.SHIP?G.ship:b.obj===OBJ.HELI?G.heli0:b.obj===OBJ.JET?G.plane:ACT.balloon;
-    game.objs.push({type:b.obj,x:b.objX,wy:cy,w:dim.w,h:dim.h,dir:b.dir,alive:true,
+    // place within the actual river channel (pick a side if an island splits it)
+    const e=riverEdges(cy), m=dim.w/2+1, frac=b.rx/63; let lo=e.left+m, hi=e.right-m;
+    if(e.islL>2){ const lw=e.islL-e.left, rw=e.right-e.islR;
+      if(lw>=rw){ lo=e.left+m; hi=e.islL-m; } else { lo=e.islR+m; hi=e.right-m; } }
+    const x=Math.max(8,Math.min(FIELD_W-8, lo+frac*Math.max(0,hi-lo)));
+    game.objs.push({type:b.obj,x,wy:cy,w:dim.w,h:dim.h,dir:b.dir,alive:true,
       vx:b.obj===OBJ.SHIP?0.18:b.obj===OBJ.HELI?0.35:b.obj===OBJ.JET?0.6:0});
+  }
+  // fast enemy jets streak across the river from stage 5+ (pygame-River-Raid behaviour)
+  if(blockCount>=4 && !b.isBridge && gen.level>=5 && (b.rx%9)===1){
+    const e=riverEdges(cy), d=G.plane;
+    game.objs.push({type:OBJ.JET,x:Math.max(8,Math.min(FIELD_W-8,e.cx)),wy:cy+SAMPLE_H,
+      w:d.w,h:d.h,dir:(b.rx&8)?1:-1,alive:true,vx:0.7});
   }
   // a tank may be crossing the bridge -> 750-pt bonus if you blow it then (tanks never shoot)
   if(blockCount>=4 && b.isBridge && (b.rx&3)===0){
-    game.objs.push({type:OBJ.TANK,wy:bridgeWy,x:CENTER,onBridge:true,w:ACT.tank.w,h:ACT.tank.h,alive:true});
+    game.objs.push({type:OBJ.TANK,wy:bridgeWy,x:riverEdges(bridgeWy).cx,onBridge:true,w:ACT.tank.w,h:ACT.tank.h,alive:true});
   }
   // decorative maroon mountains on the green banks (the 800XL "landscape" look)
   if(blockCount>=4 && !b.isBridge && (b.rx&1)===0){
@@ -486,28 +582,28 @@ function blockAt(wy){
   i=Math.max(0,Math.min(game.blocks.length-1,i));
   return i;
 }
+const SAMPLE_H=BLOCK_H/2;
+const T_LOOP=Math.floor(T_TOTAL/(SECTION_BLOCKS*BLOCK_H))*(SECTION_BLOCKS*BLOCK_H);  // section-aligned loop
 function riverEdges(wy){
-  const i=blockAt(wy);
-  const b0=game.blocks[i], b1=game.blocks[Math.min(game.blocks.length-1,i+1)];
-  let t=Math.max(0,Math.min(1,(wy-b0.worldY)/BLOCK_H));
-  let half,isl;
-  if(b0.isBridge){
-    // a bridge sits in a NARROW neck between stages: stay tight, then open up at the very end
-    const tt=t<0.7?0:((t-0.7)/0.3), s=tt*tt*(3-2*tt);
-    half=b0.half+(b1.half-b0.half)*s; isl=0;
-  } else {
-    const s=t*t*(3-2*t);                            // smoothstep -> organic curved banks
-    half=b0.half+(b1.half-b0.half)*s;
-    isl =b0.islandHalf+(b1.islandHalf-b0.islandHalf)*s;
-  }
-  return {left:CENTER-half,right:CENTER+half,half,island:isl};
+  // sample the generated per-line bank profile (1 line = 1 world px); loops on section boundaries
+  let f=wy; let i=Math.floor(f), t=f-i;
+  i=((i%T_LOOP)+T_LOOP)%T_LOOP; const j=(i+1)%T_LOOP;
+  const left =tL[i]+(tL[j]-tL[i])*t, right=tR[i]+(tR[j]-tR[i])*t;
+  let islL=0, islR=0;
+  const aL=tIL[i],aR=tIR[i],bL=tIL[j],bR=tIR[j];
+  if(aL>0 && bL>0){ islL=aL+(bL-aL)*t; islR=aR+(bR-aR)*t; }
+  else if(aL>0){ islL=aL; islR=aR; }
+  else if(bL>0){ islL=bL; islR=bR; }
+  if(islR-islL<2){ islL=0; islR=0; }
+  return {left, right, islL, islR, half:(right-left)/2, cx:(left+right)/2,
+          island:(islL>0 && islL<CENTER && islR>CENTER)?(islR-islL)/2:0};
 }
 // pick an x in open water at worldY wy (side channel if the centre is an island)
 function safeSpawnX(wy){
   const e=riverEdges(wy);
-  if(e.island>2){
-    const lw=(CENTER-e.island)-e.left, rw=e.right-(CENTER+e.island);
-    return lw>=rw ? (e.left+(CENTER-e.island))/2 : ((CENTER+e.island)+e.right)/2;
+  if(e.islL>2){                                  // island splits the river -> pick the wider channel
+    const lw=e.islL-e.left, rw=e.right-e.islR;
+    return lw>=rw ? (e.left+e.islL)/2 : (e.islR+e.right)/2;
   }
   return (e.left+e.right)/2;
 }
@@ -590,7 +686,7 @@ function update(dt){
   if(g.invuln<=0){
     let crash=false;
     if(g.jetX-jw<edge.left||g.jetX+jw>edge.right) crash=true;
-    if(edge.island>0&&Math.abs(g.jetX-CENTER)<edge.island+jw) crash=true;
+    if(edge.islL>0 && g.jetX+jw>edge.islL && g.jetX-jw<edge.islR) crash=true;  // hit the island
     if(crash){ killJet(); return; }
   }
   g.jetX=Math.max(jw,Math.min(FIELD_W-jw,g.jetX));
@@ -612,18 +708,17 @@ function update(dt){
   // 800XL: enemies shoot back. Missiles travel HORIZONTALLY across the river
   // (and ride the scroll downward) — helicopters & land tanks only.
   g.heliTimer-=dt;
-  if(g.heliTimer<=0){
-    // only helicopters fire — tanks do NOT shoot from land
+  if(g.heliTimer<=0 && g.shownLevel>=4){              // helicopters don't shoot until stage 4
     const shooters=g.objs.filter(o=>{ if(!o.alive||o.type!==OBJ.HELI)return false;
       const sy=w2s(o.wy); return sy>4 && sy<JET_Y-10; });
     if(shooters.length){
       const o=shooters[(Math.random()*shooters.length)|0];
       const dir=(g.jetX>=o.x)?1:-1;                    // fire toward the jet's side
-      g.ebullets.push({x:o.x, wy:o.wy, vx:dir*(55+g.level*4)});
+      g.ebullets.push({x:o.x, wy:o.wy, vx:dir*(48+g.shownLevel*5)});  // faster missiles deeper in
       A2.heliShoot();
     }
-    g.heliTimer=Math.max(0.45, 1.3+Math.random()*1.2 - g.level*0.03);
   }
+  if(g.heliTimer<=0){ g.heliTimer=Math.max(0.4, 1.7+Math.random()*1.2 - g.shownLevel*0.045); }  // and fire more often deeper in
   // move enemy missiles horizontally; they descend with the scroll (fixed worldY)
   for(const eb of g.ebullets) eb.x += eb.vx*dt;
   g.ebullets=g.ebullets.filter(eb=>{ const sy=w2s(eb.wy); return eb.x>-6&&eb.x<FIELD_W+6&&sy>-6&&sy<PLAY_H+6; });
@@ -637,19 +732,19 @@ function update(dt){
     if(!o.alive)continue;
     if(o.type===OBJ.SHIP||o.type===OBJ.HELI||o.type===OBJ.JET){
       o.x+=o.dir*o.vx*v*dt*0.7;
-      const e=riverEdges(o.wy), m=o.w/2+1;
+      const e=riverEdges(o.wy), m=o.w/2+1, mid=(e.islL+e.islR)/2;
       if(o.x-m<e.left){o.x=e.left+m;o.dir=1;}
       if(o.x+m>e.right){o.x=e.right-m;o.dir=-1;}
-      // never sit on a central island — push fully into the nearer channel
-      if(e.island>1 && Math.abs(o.x-CENTER)<e.island+m){
-        if(o.x<CENTER){o.x=CENTER-e.island-m;o.dir=-1;} else {o.x=CENTER+e.island+m;o.dir=1;}
+      // never sit on the island — push fully into the nearer channel
+      if(e.islL>1 && o.x+m>e.islL && o.x-m<e.islR){
+        if(o.x<mid){o.x=e.islL-m;o.dir=-1;} else {o.x=e.islR+m;o.dir=1;}
       }
       o.x=Math.max(e.left+m,Math.min(e.right-m,o.x));
     } else if(o.type===OBJ.FUEL||o.type===OBJ.BALLOON){
       // keep static water objects off the land and off any island
-      const e=riverEdges(o.wy), m=o.w/2+1;
-      if(e.island>1 && Math.abs(o.x-CENTER)<e.island+m)
-        o.x = o.x<CENTER ? (e.left+(CENTER-e.island))/2 : ((CENTER+e.island)+e.right)/2;
+      const e=riverEdges(o.wy), m=o.w/2+1, mid=(e.islL+e.islR)/2;
+      if(e.islL>1 && o.x+m>e.islL && o.x-m<e.islR)
+        o.x = o.x<mid ? (e.left+e.islL)/2 : (e.islR+e.right)/2;
       o.x=Math.max(e.left+m, Math.min(e.right-m, o.x));
     }
   }
@@ -659,8 +754,8 @@ function update(dt){
     for(const o of g.objs){
       if(!o.alive||o.type===OBJ.HOUSE||o.type===OBJ.MOUNTAIN||(o.type===OBJ.BRIDGE&&o.passable))continue;
       const sy=w2s(o.wy); let ox,ow,oh;
-      if(o.type===OBJ.BRIDGE){ox=CENTER;ow=o.half*2;oh=8;} else {ox=o.x;ow=o.w+2;oh=o.h;}
-      if(Math.abs(b.x-ox)<ow/2 && b.sy>sy-oh && b.sy<sy+2){
+      if(o.type===OBJ.BRIDGE){const e=riverEdges(o.wy);ox=e.cx;ow=e.right-e.left;oh=8;} else {ox=o.x;ow=o.w+8;oh=o.h+4;}
+      if(Math.abs(b.x-ox)<ow/2 && b.sy>sy-oh-3 && b.sy<sy+5){
         o.alive=false; b.sy=-99; addScore(SCORE[o.type]||0);
         boom(ox,sy,o.type===OBJ.BRIDGE); A2.explosion(o.type===OBJ.BRIDGE);
         if(o.type===OBJ.BRIDGE){           // bonus if a tank is crossing the bridge (750 total)
@@ -679,9 +774,12 @@ function update(dt){
     for(const o of g.objs){
       if(!o.alive||o.type===OBJ.HOUSE||o.type===OBJ.MOUNTAIN||o.type===OBJ.TANK||(o.type===OBJ.BRIDGE&&o.passable))continue;
       const sy=w2s(o.wy);
-      const ohh=o.type===OBJ.BRIDGE?5:(o.h/2);
-      if(Math.abs(sy-JET_Y) > jhh+ohh) continue;
-      const ox=o.type===OBJ.BRIDGE?CENTER:o.x, ohw=o.type===OBJ.BRIDGE?o.half:(o.w/2);
+      // sprites are drawn bottom-anchored at sy (span [sy-h, sy]); bridge is centred on sy
+      const ocy=o.type===OBJ.BRIDGE?sy:(sy-o.h/2);
+      const ohh=o.type===OBJ.BRIDGE?6:(o.h/2);
+      if(Math.abs(ocy-JET_Y) > jhh+ohh) continue;
+      const eb=o.type===OBJ.BRIDGE?riverEdges(o.wy):null;
+      const ox=eb?eb.cx:o.x, ohw=eb?(eb.right-eb.left)/2:(o.w/2);
       if(Math.abs(g.jetX-ox) < jhw+ohw){
         if(o.type===OBJ.FUEL){ g.fuel=Math.min(1,g.fuel+0.012); A2.refuel(); }
         else { boom(g.jetX,JET_Y,false); killJet(); return; }
@@ -703,12 +801,11 @@ function respawn(){
   // restart just past the LAST bridge you cleared (checkpoint), not mid-river
   let cp=null;
   for(const c of game.checkpoints) if(c.wy<=game.dist+1) cp=c;
-  if(cp){
-    gen.sec=cp.sec; gen.blk=0;                  // resume AT the bridge of the current stage
-    gen.level=Math.max(1,game.shownLevel);
-    game.worldTop=cp.wy; game.dist=cp.wy+9;     // jet sits on the bridge
+  if(cp && cp.snap){
+    restoreSnap(cp.snap);                        // replay the exact section from its bridge
+    game.worldTop=cp.wy; game.dist=cp.wy+9;      // jet sits on the bridge
     game.blocks=[]; game.objs=[]; game.explosions=[];
-    game.checkpoints=[{wy:cp.wy,sec:cp.sec}];
+    game.checkpoints=[{wy:cp.wy,snap:cp.snap,sec:cp.sec}];
     blockCount=999;                             // no ease-in on restart
     while(game.worldTop < game.dist+JET_Y+BLOCK_H*4) pushBlock();
     // make the bridge you start on already open (passable, doesn't re-award a level)
@@ -758,13 +855,13 @@ function render(){
   for(let y=0;y<PLAY_H;y+=step){
     const wy=s2w(y), e=riverEdges(wy);
     let L=e.left+shoreJit(wy,0), R=e.right+shoreJit(wy,1);
-    L=Math.max(2,Math.min(CENTER-3,L)); R=Math.max(CENTER+3,Math.min(FIELD_W-2,R));
+    L=Math.max(2,Math.min(FIELD_W-4,L)); R=Math.max(L+3,Math.min(FIELD_W-2,R));
     ctx.fillStyle=C.bank;     ctx.fillRect(0,y,FIELD_W,step);     // green land
-    ctx.fillStyle=C.river;    ctx.fillRect(L,y,R-L,step);         // blue channel (smooth edges)
+    ctx.fillStyle=C.river;    ctx.fillRect(L,y,R-L,step);         // blue winding channel
     ctx.fillStyle=C.bankEdge; ctx.fillRect(L-1.5,y,1.5,step); ctx.fillRect(R,y,1.5,step);  // maroon shore
-    if(e.island>1){ let il=CENTER-e.island+shoreJit(wy,2), iw=e.island*2;
-      ctx.fillStyle=C.island;     ctx.fillRect(il,y,iw,step);
-      ctx.fillStyle=C.islandEdge; ctx.fillRect(il-1.5,y,1.5,step); ctx.fillRect(il+iw,y,1.5,step); }
+    if(e.islL>1){ let il=e.islL+shoreJit(wy,2), ir=e.islR+shoreJit(wy,2);
+      ctx.fillStyle=C.island;     ctx.fillRect(il,y,Math.max(1,ir-il),step);
+      ctx.fillStyle=C.islandEdge; ctx.fillRect(il-1.5,y,1.5,step); ctx.fillRect(ir,y,1.5,step); }
   }
 
   // objects
