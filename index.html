@@ -327,12 +327,12 @@ const NSEC=MAP_HALF.length;
 
 /* ------------------------------------------------------------- constants */
 const FIELD_W = 192;          // wider playfield -> thicker banks, roomier (less tight)
-const PLAY_H  = 172;          // playfield height
+let   PLAY_H  = 172;          // playfield height — grows on tall screens to fill the height
 const HUD_H   = 42;           // bottom status panel
 const CENTER  = FIELD_W/2;
 const BLOCK_H = 31;           // ~5-6 blocks visible — matches the original's on-screen density
 const SECTION_BLOCKS = 36;    // longer sections between bridges (pygame-River-Raid feel)
-const JET_Y   = PLAY_H - 26;  // jet's fixed screen row (near bottom)
+let   JET_Y   = PLAY_H - 26;  // jet's fixed screen row (near bottom) — tracks PLAY_H
 // remap raw map half-widths (0..60, in the old 160 field) to roomier 800XL-like
 // proportions: thick green banks, channels never brutally tight.
 function mapHalf(raw){ return Math.round(14 + raw*0.66); }   // -> ~14..54 px each side
@@ -1161,8 +1161,23 @@ const FACTS=[
   const line='★ DID YOU KNOW — '+FACTS.join('   ◆   ')+'   ◆   ';
   t.textContent=line+line;     // duplicated so the loop wraps seamlessly
 })();
+// Responsive playfield: grow PLAY_H so the canvas fills the screen height on tall/portrait
+// screens (more river visible), keeping every pixel the same size (no stretch). Desktop/wide
+// screens keep the original height and letterbox left/right.
+const stageEl=document.getElementById('stage');
+function computeLayout(){
+  const vw=window.innerWidth||384, vh=window.innerHeight||428;   // fall back to original 384x428 if unknown
+  let total=Math.round(FIELD_W*vh/vw);          // (PLAY_H+HUD_H) needed to fill the height
+  total=Math.max(214, Math.min(470, total));    // 214 = original; cap so the river never gets too thin
+  PLAY_H=total-HUD_H; JET_Y=PLAY_H-26;
+  cv.width=FIELD_W*RS; cv.height=(PLAY_H+HUD_H)*RS; ctx.imageSmoothingEnabled=false;
+  stageEl.style.aspectRatio=FIELD_W+' / '+(PLAY_H+HUD_H);
+  stageEl.style.width='min(100%, calc(100dvh * '+FIELD_W+' / '+(PLAY_H+HUD_H)+'))';
+}
+computeLayout();
+addEventListener('resize', computeLayout);
 // keep render crisp on high-dpi / orientation change
-addEventListener('orientationchange',()=>{ recalibrateTilt(); });
+addEventListener('orientationchange',()=>{ recalibrateTilt(); computeLayout(); });
 </script>
 <script>
 // register the service worker for offline / installable PWA (no-op when unsupported)
