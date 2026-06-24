@@ -3,8 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#000000">
-<title>River Raid</title>
+<meta name="theme-color" content="#0a0e1a">
+<title>River Raid — HTML5 800XL Remake</title>
+<meta name="description" content="A faithful single-file HTML5 remake of the classic Atari 800XL vertical-scrolling river shooter. Play in your browser or install it as an app.">
+<link rel="canonical" href="https://tsemachh.github.io/river-raid/">
+<!-- PWA / installable -->
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="River Raid">
+<!-- Social preview -->
+<meta property="og:title" content="River Raid — HTML5 800XL Remake">
+<meta property="og:description" content="Fly the canyon, dodge the banks, blow the bridges. A faithful Atari 800XL River Raid remake you can play in the browser or install as an app.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://tsemachh.github.io/river-raid/">
+<meta name="twitter:card" content="summary_large_image">
 <style>
   *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html,body{ margin:0; height:100%; background:#000; overflow:hidden;
@@ -56,6 +72,11 @@
   .tilt-tag{ position:absolute; top:8px; left:50%; transform:translateX(-50%);
     font-size:11px; color:#7ddb4a; background:rgba(0,0,0,.4); padding:2px 8px;
     border-radius:10px; z-index:6; }
+  #btnExit{ position:absolute; top:8px; right:8px; z-index:7; width:32px; height:32px;
+    border-radius:8px; border:1px solid rgba(150,170,255,.45); background:rgba(20,24,40,.6);
+    color:#dfe6ff; font:bold 16px/1 "Courier New",monospace; cursor:pointer; padding:0;
+    display:flex; align-items:center; justify-content:center; }
+  #btnExit:active{ background:rgba(120,140,255,.7); }
 </style>
 </head>
 <body>
@@ -68,6 +89,7 @@
       <div class="pad" id="padR"><div class="tbtn" id="btnFire">FIRE</div><div class="tbtn" id="btnUp">▲</div><div class="tbtn" id="btnDown">▼</div></div>
     </div>
     <div id="tiltTag" class="tilt-tag hidden">TILT TO STEER</div>
+    <button id="btnExit" class="hidden" aria-label="Quit to title">✕</button>
 
     <div id="titleScreen" class="screen">
       <div class="logo"><span>ACTIVISION STYLE</span><b>RIVER RAID</b></div>
@@ -758,6 +780,7 @@ function update(dt){
       if(Math.abs(b.x-ox)<ow/2 && b.sy>sy-oh-3 && b.sy<sy+5){
         o.alive=false; b.sy=-99; addScore(SCORE[o.type]||0);
         boom(ox,sy,o.type===OBJ.BRIDGE); A2.explosion(o.type===OBJ.BRIDGE);
+        buzz(o.type===OBJ.BRIDGE?[0,30,30,60]:18);   // bridge = strong double buzz, enemy = light tap
         if(o.type===OBJ.BRIDGE){           // bonus if a tank is crossing the bridge (750 total)
           for(const t of g.objs){ if(t.alive&&t.type===OBJ.TANK&&t.onBridge&&Math.abs(t.wy-o.wy)<BLOCK_H){
             t.alive=false; addScore(250); boom(t.x,sy,false); } }
@@ -781,7 +804,7 @@ function update(dt){
       const eb=o.type===OBJ.BRIDGE?riverEdges(o.wy):null;
       const ox=eb?eb.cx:o.x, ohw=eb?(eb.right-eb.left)/2:(o.w/2);
       if(Math.abs(g.jetX-ox) < jhw+ohw){
-        if(o.type===OBJ.FUEL){ g.fuel=Math.min(1,g.fuel+0.012); A2.refuel(); }
+        if(o.type===OBJ.FUEL){ g.fuel=Math.min(1,g.fuel+0.012); A2.refuel(); if(g.t>(g.refuelBuzzT||0)){buzz(10);g.refuelBuzzT=g.t+0.5;} }
         else { boom(g.jetX,JET_Y,false); killJet(); return; }
       }
     }
@@ -793,8 +816,12 @@ function updateDead(dt){ for(const ex of game.explosions)ex.t+=dt; game.deadTime
   if(game.deadTimer<=0){ if(game.lives<=0)endGame(); else respawn(); } }
 
 function addScore(p){ game.score+=p; if(game.score>=game.nextLife){game.lives++;game.nextLife+=10000;} }
-function boom(x,y,big){ game.explosions.push({x,y,t:0,life:big?0.6:0.42,big}); }
+// haptic feedback — Android Chrome/Firefox honour navigator.vibrate; iOS Safari ignores it (Apple blocks it)
+let haptics=true; function buzz(p){ if(haptics&&navigator.vibrate){ try{ navigator.vibrate(p); }catch(e){} } }
+let shake=0;                                 // screen-shake amount (seconds), decays in render
+function boom(x,y,big){ game.explosions.push({x,y,t:0,life:big?0.6:0.42,big}); shake=Math.max(shake, big?0.55:0.3); }
 function killJet(){ if(game.state!=='play')return; A2.explosion(false); boom(game.jetX,JET_Y,false);
+  shake=Math.max(shake,0.6); buzz([0,45,40,90]);          // crash = biggest shake + double buzz
   game.lives--; game.state='dead'; game.deadTimer=1.1; }
 function respawn(){
   game.state='play';
@@ -815,7 +842,7 @@ function respawn(){
   game.fuel=1; game.invuln=2.5; game.bullets=[]; game.speed=1;
   game.waiting=true; game.banner=0;            // wait on the bridge; clear any LEVEL banner
 }
-function endGame(){ game.state='over'; A2.stopEngine();
+function endGame(){ game.state='over'; A2.stopEngine(); showExit(false);
   if(game.score>best)best=game.score;
   document.getElementById('finalScore').textContent='SCORE '+game.score;
   document.getElementById('bestScore').textContent ='BEST  '+best;
@@ -846,8 +873,10 @@ function drawShaded(parsed,cx,topY,mirror,topCol,baseCol,botCol){
 }
 const RS=2;                                    // internal super-sampling for a crisper, modern look
 function render(){
-  ctx.setTransform(RS,0,0,RS,0,0);
-  px(0,0,FIELD_W,PLAY_H+HUD_H,'#000');
+  let shx=0, shy=0;
+  if(shake>0){ const a=shake*10*RS; shx=(Math.random()*2-1)*a; shy=(Math.random()*2-1)*a; shake=Math.max(0,shake-0.035); }
+  ctx.setTransform(RS,0,0,RS,shx,shy);
+  px(-4,-4,FIELD_W+8,PLAY_H+HUD_H+8,'#000');     // slightly oversized so shake never reveals a gap
   if(!game)return; const g=game;
 
   // terrain drawn at device resolution with smooth (anti-aliased) coastlines — no chunky steps
@@ -976,11 +1005,17 @@ function drawLabel(str,x,y,col,sc){ sc=sc||1; ctx.fillStyle=col; let cx=x;
   for(const ch of str){ const gl=LF[ch]; if(gl){ for(let r=0;r<5;r++)for(let c=0;c<3;c++) if(gl[r][c]==='1')ctx.fillRect(cx+c*sc,y+r*sc,sc,sc); } cx+=4*sc; } }
 
 /* -------------------------------------------------------------- ui */
+const exitBtn=document.getElementById('btnExit');
+function showExit(on){ exitBtn.classList.toggle('hidden', !on); }
 function show(id){ for(const s of ['titleScreen','pauseScreen','overScreen']) document.getElementById(s).classList.add('hidden');
   if(id) document.getElementById(id).classList.remove('hidden'); }
 let paused=false;
 function togglePause(){ if(!game||game.state!=='play'&&!paused)return;
   paused=!paused; if(paused){ show('pauseScreen'); A2.stopEngine(); } else { show(null); A2.startEngine(); } }
+// quit the current round back to the title screen (visible ✕, works without a keyboard)
+function exitToTitle(){ if(!game)return; paused=false; A2.stopEngine(); game.state='title';
+  showExit(false); document.getElementById('tiltTag').classList.add('hidden'); show('titleScreen'); }
+exitBtn.addEventListener('click', exitToTitle);
 function goFullscreen(){ const el=document.documentElement;
   const fn=el.requestFullscreen||el.webkitRequestFullscreen; if(fn){ try{ fn.call(el); }catch(e){} } }
 function startGame(sec){ sec=(typeof sec==='number')?sec:0; A2.init(); A2.resume();
@@ -989,7 +1024,7 @@ function startGame(sec){ sec=(typeof sec==='number')?sec:0; A2.init(); A2.resume
     DeviceOrientationEvent.requestPermission().then(p=>{if(p==='granted')enableTilt();}).catch(()=>{});
   else enableTilt();
   if(isTouch){ document.getElementById('tiltTag').classList.remove('hidden'); goFullscreen(); }
-  show(null); A2.startEngine(); newGame(sec); paused=false; }
+  show(null); showExit(true); A2.startEngine(); newGame(sec); paused=false; }
 // title-screen bridge select (start at any bridge, like the 800XL cartridge)
 const MAX_BRIDGE=99;                         // difficulty caps at 48; geometry loops beyond
 let startBridge=1;
@@ -1018,6 +1053,12 @@ if(isTouch){ document.getElementById('touch').classList.remove('hidden');
 }
 // keep render crisp on high-dpi / orientation change
 addEventListener('orientationchange',()=>{ recalibrateTilt(); });
+</script>
+<script>
+// register the service worker for offline / installable PWA (no-op when unsupported)
+if('serviceWorker' in navigator){
+  addEventListener('load',()=>{ navigator.serviceWorker.register('service-worker.js').catch(()=>{}); });
+}
 </script>
 </body>
 </html>

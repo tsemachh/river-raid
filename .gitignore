@@ -1,4 +1,10 @@
-riveraid.zip
+# OS / editor cruft
 .DS_Store
+.idea/
+.vscode/
+*.swp
+
+# project artefacts we don't want in the repo
+riveraid.zip
 *.rom
 *.atr
