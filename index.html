@@ -26,7 +26,7 @@
   html,body{ margin:0; height:100%; background:#000; overflow:hidden;
     font-family:"Courier New",monospace; color:#fff; touch-action:none;
     -webkit-user-select:none; user-select:none; }
-  #wrap{ position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; }
+  #wrap{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
   /* keep the true 192:214 game aspect on every screen — letterbox, never stretch.
      width is the smaller of the viewport width or what the viewport height allows. */
   #stage{ position:relative; aspect-ratio:192/214; max-width:100%; max-height:100%;
@@ -72,33 +72,28 @@
   #ticker:hover .track{ animation-play-state:paused; }
   @keyframes ticker{ from{ transform:translateX(0); } to{ transform:translateX(-50%); } }
 
-  #touch{ position:absolute; inset:0; z-index:4; pointer-events:none; }
-  /* control bar BELOW the playfield (never covers the game) */
-  #controls{ display:none; width:100%; max-width:560px; box-sizing:border-box;
-    align-items:center; justify-content:space-between; gap:12px;
-    padding:8px 16px calc(8px + env(safe-area-inset-bottom,0px)); }
-  #controls.show{ display:flex; }
-  .ctl-left,.ctl-right{ display:flex; align-items:center; gap:12px; }
-  .tbtn{ pointer-events:auto; width:60px; height:60px; border-radius:50%;
-    background:rgba(40,48,80,.6); border:2px solid rgba(150,170,255,.5);
-    color:#dfe6ff; font-size:22px; font-weight:bold; display:flex;
+  /* on-screen touch controls overlay the stage, but small + in the corners so they
+     don't cover the action: AUTO chip top-left, small FIRE bottom-right, speed gauge right edge. */
+  #touch{ position:absolute; inset:0; z-index:5; pointer-events:none; }
+  .tbtn{ pointer-events:auto; border-radius:50%;
+    background:rgba(40,48,80,.55); border:2px solid rgba(150,170,255,.5);
+    color:#dfe6ff; font-weight:bold; display:flex;
     align-items:center; justify-content:center; touch-action:none; user-select:none; }
   .tbtn:active{ background:rgba(120,140,255,.75); transform:scale(.94); }
-  .spd{ display:flex; flex-direction:column; gap:8px; }
-  .spd .tbtn{ width:50px; height:50px; font-size:18px; }
-  #btnFire{ width:88px; height:88px; background:rgba(170,42,42,.78);
-    border-color:rgba(255,150,150,.8); font-size:15px; letter-spacing:1px; }
-  #btnFire.auto{ background:rgba(180,110,30,.82); border-color:rgba(255,210,120,.85); }
-  #autoChip{ pointer-events:auto; font:bold 12px/1 "Courier New",monospace; color:#ff8a7a;
-    cursor:pointer; background:rgba(46,16,16,.78); border:1px solid rgba(255,120,100,.6);
-    border-radius:12px; padding:8px 13px; }
+  #btnFire{ position:absolute; right:10px; bottom:10px; width:58px; height:58px;
+    font-size:12px; letter-spacing:1px; background:rgba(170,42,42,.72); border-color:rgba(255,150,150,.78); }
+  #btnFire.auto{ background:rgba(180,110,30,.8); border-color:rgba(255,210,120,.85); }
+  #autoChip{ position:absolute; top:8px; left:8px; pointer-events:auto;
+    font:bold 12px/1 "Courier New",monospace; color:#ff8a7a; cursor:pointer;
+    background:rgba(46,16,16,.78); border:1px solid rgba(255,120,100,.6); border-radius:12px; padding:7px 12px; }
   #autoChip.on{ color:#fff; background:#c0392b; border-color:#ff9a8a; box-shadow:0 0 10px rgba(220,60,40,.6); }
-  /* vertical speed gauge */
-  #spdGauge{ width:13px; height:108px; border:1px solid rgba(150,170,255,.5); border-radius:7px;
-    background:rgba(15,18,32,.7); overflow:hidden; position:relative; }
+  /* vertical speed gauge on the right edge of the stage */
+  #spdGauge{ position:absolute; right:8px; top:50%; transform:translateY(-50%);
+    width:12px; height:42%; max-height:180px; border:1px solid rgba(150,170,255,.5); border-radius:7px;
+    background:rgba(15,18,32,.6); overflow:hidden; pointer-events:none; }
   #spdGauge i{ position:absolute; left:0; right:0; bottom:0; height:28%; background:linear-gradient(#7ddb4a,#2f7d18); }
-  #spdGauge::after{ content:''; position:absolute; left:0; right:0; top:50%; height:1px; background:rgba(255,255,255,.35); }
-  #dragHint{ position:absolute; left:0; right:0; bottom:10px; text-align:center; z-index:4;
+  #spdGauge b{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); font:bold 7px/1 "Courier New",monospace; color:rgba(255,255,255,.6); }
+  #dragHint{ position:absolute; left:0; right:0; bottom:78px; text-align:center; z-index:4;
     font-size:12px; color:rgba(220,230,255,.62); letter-spacing:1px; pointer-events:none;
     transition:opacity .6s; }
   .tilt-tag{ position:absolute; top:8px; left:50%; transform:translateX(-50%);
@@ -117,7 +112,10 @@
     <canvas id="cv" width="384" height="428"></canvas>
 
     <div id="touch" class="hidden">
-      <div id="dragHint">◀ drag anywhere to steer ▶</div>
+      <button id="autoChip">AUTO ✗</button>
+      <div id="spdGauge"><i></i><b>SPD</b></div>
+      <div class="tbtn" id="btnFire">FIRE</div>
+      <div id="dragHint">◀ drag to steer · drag up/down = speed ▶</div>
     </div>
     <div id="tiltTag" class="tilt-tag hidden">TILT TO STEER</div>
     <button id="btnExit" class="hidden" aria-label="Quit to title">✕</button>
@@ -154,16 +152,6 @@
       <button class="btn" id="againBtn">PLAY AGAIN</button>
     </div>
   </div>
-  <div id="controls">
-    <div class="ctl-left">
-      <div class="spd"><div class="tbtn" id="btnUp">▲</div><div class="tbtn" id="btnDown">▼</div></div>
-      <div id="spdGauge"><i></i></div>
-    </div>
-    <div class="ctl-right">
-      <button id="autoChip">AUTO ✗</button>
-      <div class="tbtn" id="btnFire">FIRE</div>
-    </div>
-  </div>
 </div>
 
 <script>
@@ -188,7 +176,9 @@ const SPR = {
   house:  ["00111000","01111100","11111110","11111110","10101010","10101010","11111110","00000000","00000000","00000100","00000100","00000100","00001110","00001110","00011111","00011111","00001110","00000100","00000100"],
   fuel:   ["0111110","1101111","1100111","1101111","1101111","1111111","1101011","1101011","1101011","1100011","1111111","1100011","1101111","1100111","1101111","1100011","1111111","1101111","1101111","1101111","1101111","1100011","1111111"],
   tank:   ["00011000","00011000","01111110","11111111","11111111","01111110","10100101"],
-  pjet:   ["00001000","00001000","00011100","00111110","01101011","01001001","00011100","00101010"]
+  pjet:   ["00001000","00001000","00011100","00111110","01101011","01001001","00011100","00101010"],
+  // big, classic River-Raid-style jet (used for the player) — pointed nose, swept wings, tail fins
+  player: ["0000001000000","0000011100000","0000011100000","0000111110000","1000111110001","1101111111011","1111111111111","1111111111111","0110111110110","0000111110000","0000110110000","0001100011000"]
 };
 const DIGITS = [
   ["0011110","0110011","0110011","0110011","0110011","0110011","0110011","0011110"],
@@ -366,12 +356,12 @@ const C={
   bank:'#58a838', bankEdge:'#7c1e1e',      // 800XL: green land, dark-maroon jagged shoreline
   island:'#58a838', islandEdge:'#7c1e1e',
   mountain:'#7c1e1e', mountainAcc:'#4858d8',
-  jet:'#e0e0e0',
+  jet:'#e6d22a',   // bright yellow player jet, like the original
   ship:'#101018', shipStripe:'#cc3030', shipHull:'#40c0c0',  // black hull, red+cyan waterline
-  heli:'#c0c6d4', heliRotor:'#e8c040', heliDk:'#6b7384',   // steel-grey body (stands out from green islands), yellow rotor
+  heli:'#5fae3a', heliRotor:'#f0d040', heliDk:'#2f6018',   // green body + bright yellow rotor (original look)
   plane:'#8ad24a',
   tank:'#b0b040', tankDk:'#6a6a20',
-  fuelBody:'#c840b4', fuelMark:'#ffffff',   // 800XL: magenta depot, white "FUEL"
+  fuelBody:'#dcdce6', fuelMark:'#d42424',   // white tank with red "FUEL", like the original
   bridge:'#9a6a2a', bridgeDk:'#5a3a12',     // brown wooden bridge
   road:'#9a9a9a', roadEdge:'#d8d040',       // grey road with yellow border
   bullet:'#ffffff',
@@ -611,7 +601,7 @@ function newGame(startSec){
   const worldStart=startSec*SECTION_BLOCKS*BLOCK_H;  // align terrain to this section/bridge
   const initSnap={lo:R_lo,hi:R_hi,blk:gen.blk,level:gen.level,pf:gen.pf,prevId:gen.prevId,sec:gen.sec};
   game={ state:'play', score:0, lives:4, fuel:1.0, nextLife:10000, level:startSec+1,
-    dist:worldStart, speed:1.0, baseV:Math.min(78,36+startSec*1.5),
+    dist:worldStart, speed:1.0, baseV:Math.min(88,42+startSec*1.6),
     blocks:[], worldTop:worldStart,
     jetX:CENTER, jetDir:0,
     bullets:[], explosions:[], objs:[],
@@ -704,22 +694,24 @@ function hold(id,k){ const el=document.getElementById(id); if(!el)return;
   el.addEventListener('touchstart',on,{passive:false}); el.addEventListener('touchend',off,{passive:false});
   el.addEventListener('touchcancel',off,{passive:false}); el.addEventListener('mousedown',on);
   el.addEventListener('mouseup',off); el.addEventListener('mouseleave',off); }
-hold('btnFire',' '); hold('btnUp','ArrowUp'); hold('btnDown','ArrowDown');  // ▲ accelerate / ▼ brake
+hold('btnFire',' ');   // speed is set by dragging the pad up/down (or tilting) — no ▲▼ buttons
 
-// PADDLE steering: drag a finger anywhere on the playfield to slide the jet (relative, variable speed)
-let dragId=null, dragLastX=0, dragAccum=0, dragHintShown=false;
+// 2-AXIS PADDLE: drag the playfield left/right to steer, up/down to set speed.
+let dragId=null, dragLastX=0, dragStartY=0, dragAccum=0, padThrottle=0, dragHintShown=false;
 const cvEl=document.getElementById('cv'), dragHintEl=document.getElementById('dragHint');
 function fieldScale(){ const r=cvEl.getBoundingClientRect(); return r.width? (192/r.width) : 0.5; }  // FIELD_W=192
-cvEl.addEventListener('touchstart',e=>{ if(dragId===null){ const t=e.changedTouches[0]; dragId=t.identifier; dragLastX=t.clientX;
+function setPadY(cy){ const r=cvEl.getBoundingClientRect();
+  padThrottle=Math.max(-1,Math.min(1,(dragStartY-cy)/(r.height*0.28||120))); }  // up = faster, down = slower
+cvEl.addEventListener('touchstart',e=>{ if(dragId===null){ const t=e.changedTouches[0]; dragId=t.identifier; dragLastX=t.clientX; dragStartY=t.clientY; padThrottle=0;
   if(dragHintEl){ dragHintEl.style.opacity='0'; dragHintShown=true; } } },{passive:true});
 cvEl.addEventListener('touchmove',e=>{ for(const t of e.changedTouches){ if(t.identifier===dragId){
-  dragAccum += (t.clientX-dragLastX)*fieldScale(); dragLastX=t.clientX; e.preventDefault(); } } },{passive:false});
-function endDrag(e){ for(const t of e.changedTouches){ if(t.identifier===dragId) dragId=null; } }
+  dragAccum += (t.clientX-dragLastX)*fieldScale(); dragLastX=t.clientX; setPadY(t.clientY); e.preventDefault(); } } },{passive:false});
+function endDrag(e){ for(const t of e.changedTouches){ if(t.identifier===dragId){ dragId=null; padThrottle=0; } } }
 cvEl.addEventListener('touchend',endDrag); cvEl.addEventListener('touchcancel',endDrag);
 // mouse drag too (desktop testing)
-cvEl.addEventListener('mousedown',e=>{ dragId='m'; dragLastX=e.clientX; });
-addEventListener('mousemove',e=>{ if(dragId==='m'){ dragAccum+=(e.clientX-dragLastX)*fieldScale(); dragLastX=e.clientX; } });
-addEventListener('mouseup',()=>{ if(dragId==='m')dragId=null; });
+cvEl.addEventListener('mousedown',e=>{ dragId='m'; dragLastX=e.clientX; dragStartY=e.clientY; padThrottle=0; });
+addEventListener('mousemove',e=>{ if(dragId==='m'){ dragAccum+=(e.clientX-dragLastX)*fieldScale(); dragLastX=e.clientX; setPadY(e.clientY); } });
+addEventListener('mouseup',()=>{ if(dragId==='m'){ dragId=null; padThrottle=0; } });
 // AUTO-FIRE toggle — tap FIRE to shoot each press, or switch AUTO on for continuous fire
 const autoChip=document.getElementById('autoChip');
 const spdFill=document.querySelector('#spdGauge i');   // speed gauge fill (mobile control bar)
@@ -769,14 +761,16 @@ function update(dt){
     if(keys[' ']||autoFire||keys['ArrowUp']||(tiltOn&&tiltThrottle>0.2)) g.waiting=false;
     else return;          // frozen: no scroll, no fuel burn, no collisions
   }
-  // throttle — buttons, or tilt the phone forward/back for variable speed
+  // throttle — keys, drag the pad up/down, or tilt the phone for variable speed
+  const SPDMAX=2.2;
   let target=1.0;
-  if(keys['ArrowUp'])target=2.0;
+  if(keys['ArrowUp'])target=SPDMAX;
   else if(keys['ArrowDown'])target=0.6;
-  else if(tiltOn && Math.abs(tiltThrottle)>0.05) target=Math.max(0.55, Math.min(2.0, 1.3 + tiltThrottle*0.7));
+  else if(dragId!==null && Math.abs(padThrottle)>0.04) target=Math.max(0.55, Math.min(SPDMAX, 1.3 + padThrottle*0.95));
+  else if(tiltOn && Math.abs(tiltThrottle)>0.05) target=Math.max(0.55, Math.min(SPDMAX, 1.3 + tiltThrottle*0.9));
   g.speed+=(target-g.speed)*Math.min(1,dt*4);
-  const accelOn = keys['ArrowUp'] || (tiltOn && tiltThrottle>0.12);
-  A2.setThrust(accelOn, (g.speed-0.6)/1.4);            // engine roar only while speeding up
+  const accelOn = keys['ArrowUp'] || (dragId!==null&&padThrottle>0.1) || (tiltOn && tiltThrottle>0.12);
+  A2.setThrust(accelOn, (g.speed-0.6)/1.6);            // engine roar only while speeding up
   // fly forward
   const v=g.baseV*g.speed; g.dist+=v*dt;
   g.level=gen.level;
@@ -785,7 +779,7 @@ function update(dt){
   for(const o of g.objs){
     if(o.type===OBJ.BRIDGE && !o.counted && g.dist>o.wy){
       o.counted=true;
-      if(!o.alive){ g.shownLevel++; g.banner=2.0; g.baseV=Math.min(78,g.baseV+2); lastStageSec=Math.max(lastStageSec,(o.sec||0)); }  // destroyed -> advance
+      if(!o.alive){ g.shownLevel++; g.banner=2.0; g.baseV=Math.min(88,g.baseV+2); lastStageSec=Math.max(lastStageSec,(o.sec||0)); }  // destroyed -> advance
     }
   }
 
@@ -1039,7 +1033,7 @@ function render(){
   // player plane — compact 800XL ROM jet (rendered larger on phones for easier play)
   if(g.state==='play'){
     if(!(g.invuln>0&&(Math.floor(g.t*12)%2)))
-      sprite(G.pjet,g.jetX,JET_Y-G.pjet.h*sprScale/2,C.jet,false,sprScale);
+      sprite(G.player,g.jetX,JET_Y-G.player.h*sprScale/2,C.jet,false,sprScale);
   }
 
   // explosions
@@ -1151,9 +1145,8 @@ document.getElementById('resumeBtn').addEventListener('click',togglePause);
 
 const isTouch=('ontouchstart'in window)||navigator.maxTouchPoints>0;
 if(isTouch){ document.getElementById('touch').classList.remove('hidden');
-  document.getElementById('tiltHint').textContent='Mobile: drag to steer · ▲▼ (or tilt) for speed · tap AUTO for auto-fire';
+  document.getElementById('tiltHint').textContent='Mobile: drag to steer · drag up/down (or tilt) for speed · tap AUTO for auto-fire';
   document.getElementById('keyHelp').classList.add('hidden');
-  document.getElementById('controls').classList.add('show');   // show the on-screen control bar
   setAuto(false);                                 // auto-fire OFF by default — tap FIRE, or toggle AUTO
   sprScale=1.6;                                    // bigger plane & enemies on phones -> easier to see and play
   const tt=document.getElementById('tiltTag');
@@ -1182,10 +1175,8 @@ const FACTS=[
 // screens keep the original height and letterbox left/right.
 const stageEl=document.getElementById('stage');
 function computeLayout(){
-  const touch=(typeof isTouch!=='undefined'&&isTouch);
-  const bar=touch?138:0;                          // reserve room for the on-screen control bar
-  const vw=window.innerWidth||384, vh0=window.innerHeight||428, vh=Math.max(180, vh0-bar);
-  let total=Math.round(FIELD_W*vh/vw);          // (PLAY_H+HUD_H) needed to fill the remaining height
+  const vw=window.innerWidth||384, vh=window.innerHeight||428;   // controls overlay the stage now; use full height
+  let total=Math.round(FIELD_W*vh/vw);          // (PLAY_H+HUD_H) needed to fill the height
   total=Math.max(214, Math.min(470, total));    // 214 = original; cap so the river never gets too thin
   PLAY_H=total-HUD_H; JET_Y=PLAY_H-26;
   cv.width=FIELD_W*RS; cv.height=(PLAY_H+HUD_H)*RS; ctx.imageSmoothingEnabled=false;
