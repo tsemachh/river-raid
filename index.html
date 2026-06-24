@@ -59,6 +59,14 @@
     text-shadow:2px 2px 0 #500; }
   .score-line{ font-size:clamp(13px,3vw,18px); color:#ffe14d; }
 
+  /* scrolling "did you know" news ticker along the bottom of the title screen */
+  #ticker{ position:absolute; left:0; right:0; bottom:0; height:24px; overflow:hidden;
+    background:rgba(0,0,0,.6); border-top:1px solid rgba(125,219,74,.5); display:flex; align-items:center; }
+  #ticker .track{ display:inline-block; white-space:nowrap; will-change:transform;
+    animation:ticker 46s linear infinite; font-size:11px; color:#9fe08a; letter-spacing:.4px; }
+  #ticker:hover .track{ animation-play-state:paused; }
+  @keyframes ticker{ from{ transform:translateX(0); } to{ transform:translateX(-50%); } }
+
   #touch{ position:absolute; inset:0; z-index:4; pointer-events:none; }
   .pad{ position:absolute; bottom:0; display:flex; gap:10px; padding:14px; align-items:flex-end; }
   #padL{ left:0; } #padR{ right:0; }
@@ -103,7 +111,7 @@
     <div id="tiltTag" class="tilt-tag hidden">TILT TO STEER</div>
     <button id="btnExit" class="hidden" aria-label="Quit to title">✕</button>
 
-    <div id="titleScreen" class="screen">
+    <div id="titleScreen" class="screen" style="padding-bottom:36px">
       <div class="logo"><span>ACTIVISION STYLE</span><b>RIVER RAID</b></div>
       <div class="sub">Fly up the river. Shoot tankers, choppers, jets and bridges.
         Fly over fuel depots to refuel — run dry and you crash.</div>
@@ -119,6 +127,7 @@
       </div>
       <button class="btn" id="startBtn">START GAME</button>
       <div class="keys" id="tiltHint"></div>
+      <div id="ticker"><div class="track" id="tickerTrack"></div></div>
     </div>
 
     <div id="pauseScreen" class="screen hidden">
@@ -1084,6 +1093,22 @@ if(isTouch){ document.getElementById('touch').classList.remove('hidden');
   const recal=e=>{e.preventDefault(); recalibrateTilt();};
   tt.addEventListener('touchstart',recal,{passive:false}); tt.addEventListener('click',recal);
 }
+// "did you know" facts ticker on the title screen (all verified)
+const FACTS=[
+  "River Raid was designed and programmed by Carol Shaw (Activision, 1982) — widely credited as the first female video-game designer.",
+  "Carol Shaw was the first woman to have her name printed on a video-game box.",
+  "There is no stored map — the entire river, islands, bridges and enemies are generated on the fly by an algorithm (a linear-feedback shift register).",
+  "Because that algorithm is seeded the same way every time, the river is identical on every play, yet almost no map data is stored.",
+  "The whole game — code, graphics and logic — fits in just 4 KB of ROM, with no bank-switching.",
+  "River Raid popularized the vertically-scrolling shooter on home consoles (Shaw was inspired by the arcade game Scramble).",
+  "In 1984 West Germany restricted its sale to minors — the official reason on record was that it 'glorified war.'",
+  "It sold over a million cartridges, earning Activision a platinum award."
+];
+(function(){
+  const t=document.getElementById('tickerTrack'); if(!t)return;
+  const line='★ DID YOU KNOW — '+FACTS.join('   ◆   ')+'   ◆   ';
+  t.textContent=line+line;     // duplicated so the loop wraps seamlessly
+})();
 // keep render crisp on high-dpi / orientation change
 addEventListener('orientationchange',()=>{ recalibrateTilt(); });
 </script>

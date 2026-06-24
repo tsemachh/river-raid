@@ -1,5 +1,7 @@
-/* River Raid — service worker: offline-first app shell cache */
-const CACHE = 'river-raid-v1';
+/* River Raid — service worker.
+   The PAGE is served network-first so new deploys appear immediately (no stale game),
+   while static assets (icons, manifest) are cache-first for offline + speed. */
+const CACHE = 'river-raid-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -21,18 +23,32 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// cache-first for same-origin GETs, with a network fallback that refreshes the cache
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
-  e.respondWith(
-    caches.match(req).then((hit) =>
-      hit ||
+  const path = new URL(req.url).pathname;
+  const isDoc = req.mode === 'navigate' || req.destination === 'document' ||
+                path.endsWith('/') || path.endsWith('index.html');
+  if (isDoc) {
+    // network-first: always try the latest page, fall back to cache when offline
+    e.respondWith(
       fetch(req).then((res) => {
         const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+        caches.open(CACHE).then((c) => c.put('./index.html', copy)).catch(() => {});
         return res;
-      }).catch(() => caches.match('./index.html'))
-    )
-  );
+      }).catch(() => caches.match(req).then((r) => r || caches.match('./index.html')))
+    );
+  } else {
+    // stale-while-revalidate for assets
+    e.respondWith(
+      caches.match(req).then((hit) => {
+        const net = fetch(req).then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+          return res;
+        }).catch(() => hit);
+        return hit || net;
+      })
+    );
+  }
 });
