@@ -86,10 +86,10 @@
   #btnFire{ width:92px; height:92px; background:rgba(170,42,42,.7);
     border-color:rgba(255,150,150,.75); font-size:15px; letter-spacing:1px; }
   #btnFire.auto{ background:rgba(180,110,30,.78); border-color:rgba(255,210,120,.8); }
-  #autoChip{ pointer-events:auto; font:bold 12px/1 "Courier New",monospace; color:#ffd24d;
-    cursor:pointer; background:rgba(20,24,40,.72); border:1px solid rgba(255,210,80,.55);
-    border-radius:12px; padding:6px 12px; }
-  #autoChip.on{ color:#100; background:#ffd24d; }
+  #autoChip{ pointer-events:auto; font:bold 12px/1 "Courier New",monospace; color:#ff8a7a;
+    cursor:pointer; background:rgba(46,16,16,.75); border:1px solid rgba(255,120,100,.6);
+    border-radius:12px; padding:7px 13px; }
+  #autoChip.on{ color:#fff; background:#c0392b; border-color:#ff9a8a; box-shadow:0 0 10px rgba(220,60,40,.6); }
   #dragHint{ position:absolute; left:0; right:0; bottom:96px; text-align:center; z-index:4;
     font-size:12px; color:rgba(220,230,255,.65); letter-spacing:1px; pointer-events:none;
     transition:opacity .6s; }
@@ -109,14 +109,13 @@
     <canvas id="cv" width="384" height="428"></canvas>
 
     <div id="touch" class="hidden">
-      <div class="pad" id="padL"><div class="spd"><div class="tbtn" id="btnUp">▲</div><div class="tbtn" id="btnDown">▼</div></div></div>
       <div class="pad" id="padR">
         <div class="firecol">
           <button id="autoChip">AUTO ✗</button>
           <div class="tbtn" id="btnFire">FIRE</div>
         </div>
       </div>
-      <div id="dragHint">◀ drag anywhere to steer ▶</div>
+      <div id="dragHint">◀ drag anywhere to steer ▶ · tilt fwd/back for speed</div>
     </div>
     <div id="tiltTag" class="tilt-tag hidden">TILT TO STEER</div>
     <button id="btnExit" class="hidden" aria-label="Quit to title">✕</button>
@@ -692,7 +691,7 @@ function hold(id,k){ const el=document.getElementById(id); if(!el)return;
   el.addEventListener('touchstart',on,{passive:false}); el.addEventListener('touchend',off,{passive:false});
   el.addEventListener('touchcancel',off,{passive:false}); el.addEventListener('mousedown',on);
   el.addEventListener('mouseup',off); el.addEventListener('mouseleave',off); }
-hold('btnUp','ArrowUp'); hold('btnDown','ArrowDown'); hold('btnFire',' ');
+hold('btnFire',' ');   // mobile: steer by dragging, speed by tilt — no on-screen ▲▼ needed
 
 // PADDLE steering: drag a finger anywhere on the playfield to slide the jet (relative, variable speed)
 let dragId=null, dragLastX=0, dragAccum=0, dragHintShown=false;
@@ -1180,9 +1179,25 @@ addEventListener('resize', computeLayout);
 addEventListener('orientationchange',()=>{ recalibrateTilt(); computeLayout(); });
 </script>
 <script>
-// register the service worker for offline / installable PWA (no-op when unsupported)
+// register the service worker for offline / installable PWA, and auto-update:
+// when a new version is deployed, the new worker takes over and the page reloads once,
+// so the installed app (and PWA) always shows the latest build on next launch.
 if('serviceWorker' in navigator){
-  addEventListener('load',()=>{ navigator.serviceWorker.register('service-worker.js').catch(()=>{}); });
+  let refreshing=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(refreshing)return; refreshing=true; location.reload();
+  });
+  addEventListener('load',()=>{
+    navigator.serviceWorker.register('service-worker.js').then(reg=>{
+      reg.addEventListener('updatefound',()=>{                 // a new version is downloading
+        const nw=reg.installing; if(!nw)return;
+        nw.addEventListener('statechange',()=>{
+          if(nw.state==='installed' && navigator.serviceWorker.controller) nw.postMessage('skip');
+        });
+      });
+      setInterval(()=>reg.update(), 60*60*1000);               // check hourly while open
+    }).catch(()=>{});
+  });
 }
 </script>
 </body>
