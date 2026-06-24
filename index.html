@@ -60,10 +60,11 @@
   .score-line{ font-size:clamp(13px,3vw,18px); color:#ffe14d; }
 
   /* scrolling "did you know" news ticker along the bottom of the title screen */
-  #ticker{ position:absolute; left:0; right:0; bottom:0; height:24px; overflow:hidden;
-    background:rgba(0,0,0,.6); border-top:1px solid rgba(125,219,74,.5); display:flex; align-items:center; }
+  #ticker{ position:absolute; left:0; right:0; bottom:0; height:36px; overflow:hidden;
+    background:rgba(0,0,0,.62); border-top:1px solid rgba(125,219,74,.5); display:flex; align-items:center; }
   #ticker .track{ display:inline-block; white-space:nowrap; will-change:transform;
-    animation:ticker 46s linear infinite; font-size:11px; color:#9fe08a; letter-spacing:.4px; }
+    animation:ticker 90s linear infinite; font-size:clamp(13px,3.4vw,17px); font-weight:bold;
+    color:#a6ec90; letter-spacing:.4px; }
   #ticker:hover .track{ animation-play-state:paused; }
   @keyframes ticker{ from{ transform:translateX(0); } to{ transform:translateX(-50%); } }
 
@@ -75,16 +76,19 @@
     color:#dfe6ff; font-size:24px; font-weight:bold; display:flex;
     align-items:center; justify-content:center; touch-action:none; user-select:none; }
   .tbtn:active{ background:rgba(120,140,255,.7); transform:scale(.94); }
-  .spd{ display:flex; flex-direction:column-reverse; gap:8px; margin-right:10px; }
+  .spd{ display:flex; flex-direction:column-reverse; gap:8px; }
   .spd .tbtn{ width:54px; height:54px; font-size:20px; }
+  .firecol{ display:flex; flex-direction:column; align-items:center; gap:8px; }
   #btnFire{ width:92px; height:92px; background:rgba(170,42,42,.7);
     border-color:rgba(255,150,150,.75); font-size:15px; letter-spacing:1px; }
   #btnFire.auto{ background:rgba(180,110,30,.78); border-color:rgba(255,210,120,.8); }
-  #autoChip{ position:absolute; top:8px; left:8px; z-index:7; pointer-events:auto;
-    font:bold 11px/1 "Courier New",monospace; color:#ffd24d; cursor:pointer;
-    background:rgba(20,24,40,.6); border:1px solid rgba(255,210,80,.5);
-    border-radius:10px; padding:5px 9px; }
+  #autoChip{ pointer-events:auto; font:bold 12px/1 "Courier New",monospace; color:#ffd24d;
+    cursor:pointer; background:rgba(20,24,40,.72); border:1px solid rgba(255,210,80,.55);
+    border-radius:12px; padding:6px 12px; }
   #autoChip.on{ color:#100; background:#ffd24d; }
+  #dragHint{ position:absolute; left:0; right:0; bottom:96px; text-align:center; z-index:4;
+    font-size:12px; color:rgba(220,230,255,.65); letter-spacing:1px; pointer-events:none;
+    transition:opacity .6s; }
   .tilt-tag{ position:absolute; top:8px; left:50%; transform:translateX(-50%);
     font-size:11px; color:#7ddb4a; background:rgba(0,0,0,.4); padding:2px 8px;
     border-radius:10px; z-index:6; }
@@ -101,17 +105,19 @@
     <canvas id="cv" width="384" height="428"></canvas>
 
     <div id="touch" class="hidden">
-      <div class="pad" id="padL"><div class="tbtn" id="btnLeft">◀</div><div class="tbtn" id="btnRight">▶</div></div>
+      <div class="pad" id="padL"><div class="spd"><div class="tbtn" id="btnUp">▲</div><div class="tbtn" id="btnDown">▼</div></div></div>
       <div class="pad" id="padR">
-        <div class="spd"><div class="tbtn" id="btnUp">▲</div><div class="tbtn" id="btnDown">▼</div></div>
-        <div class="tbtn" id="btnFire">FIRE</div>
+        <div class="firecol">
+          <button id="autoChip">AUTO ✗</button>
+          <div class="tbtn" id="btnFire">FIRE</div>
+        </div>
       </div>
-      <button id="autoChip" class="hidden">AUTO ✗</button>
+      <div id="dragHint">◀ drag anywhere to steer ▶</div>
     </div>
     <div id="tiltTag" class="tilt-tag hidden">TILT TO STEER</div>
     <button id="btnExit" class="hidden" aria-label="Quit to title">✕</button>
 
-    <div id="titleScreen" class="screen" style="padding-bottom:36px">
+    <div id="titleScreen" class="screen" style="padding-bottom:48px">
       <div class="logo"><span>ACTIVISION STYLE</span><b>RIVER RAID</b></div>
       <div class="sub">Fly up the river. Shoot tankers, choppers, jets and bridges.
         Fly over fuel depots to refuel — run dry and you crash.</div>
@@ -656,13 +662,27 @@ const keys={}; let tiltSteer=0, tiltThrottle=0, tiltOn=false, autoFire=false;
 addEventListener('keydown',e=>{ if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key))e.preventDefault();
   keys[e.key]=true; if(e.key==='p'||e.key==='P')togglePause(); });
 addEventListener('keyup',e=>{ keys[e.key]=false; });
-function hold(id,k){ const el=document.getElementById(id);
+function hold(id,k){ const el=document.getElementById(id); if(!el)return;
   const on=e=>{e.preventDefault();keys[k]=true;}, off=e=>{e.preventDefault();keys[k]=false;};
   el.addEventListener('touchstart',on,{passive:false}); el.addEventListener('touchend',off,{passive:false});
   el.addEventListener('touchcancel',off,{passive:false}); el.addEventListener('mousedown',on);
   el.addEventListener('mouseup',off); el.addEventListener('mouseleave',off); }
-hold('btnLeft','ArrowLeft'); hold('btnRight','ArrowRight'); hold('btnUp','ArrowUp');
-hold('btnDown','ArrowDown'); hold('btnFire',' ');
+hold('btnUp','ArrowUp'); hold('btnDown','ArrowDown'); hold('btnFire',' ');
+
+// PADDLE steering: drag a finger anywhere on the playfield to slide the jet (relative, variable speed)
+let dragId=null, dragLastX=0, dragAccum=0, dragHintShown=false;
+const cvEl=document.getElementById('cv'), dragHintEl=document.getElementById('dragHint');
+function fieldScale(){ const r=cvEl.getBoundingClientRect(); return r.width? (192/r.width) : 0.5; }  // FIELD_W=192
+cvEl.addEventListener('touchstart',e=>{ if(dragId===null){ const t=e.changedTouches[0]; dragId=t.identifier; dragLastX=t.clientX;
+  if(dragHintEl){ dragHintEl.style.opacity='0'; dragHintShown=true; } } },{passive:true});
+cvEl.addEventListener('touchmove',e=>{ for(const t of e.changedTouches){ if(t.identifier===dragId){
+  dragAccum += (t.clientX-dragLastX)*fieldScale(); dragLastX=t.clientX; e.preventDefault(); } } },{passive:false});
+function endDrag(e){ for(const t of e.changedTouches){ if(t.identifier===dragId) dragId=null; } }
+cvEl.addEventListener('touchend',endDrag); cvEl.addEventListener('touchcancel',endDrag);
+// mouse drag too (desktop testing)
+cvEl.addEventListener('mousedown',e=>{ dragId='m'; dragLastX=e.clientX; });
+addEventListener('mousemove',e=>{ if(dragId==='m'){ dragAccum+=(e.clientX-dragLastX)*fieldScale(); dragLastX=e.clientX; } });
+addEventListener('mouseup',()=>{ if(dragId==='m')dragId=null; });
 // AUTO-FIRE toggle — tap FIRE to shoot each press, or switch AUTO on for continuous fire
 const autoChip=document.getElementById('autoChip');
 function setAuto(on){ autoFire=on; autoChip.classList.toggle('on',on); autoChip.textContent='AUTO '+(on?'✓':'✗');
@@ -738,11 +758,12 @@ function update(dt){
   // (objects ahead must persist so they scroll into view)
   g.objs=g.objs.filter(o=> o.wy > g.dist+JET_Y-PLAY_H-24);
 
-  // steer
+  // steer — keys / tilt give a velocity; the touch paddle moves the jet directly (1:1 drag)
   let mv=0; if(keys['ArrowLeft'])mv-=1; if(keys['ArrowRight'])mv+=1;
   if(tiltOn&&Math.abs(tiltSteer)>0.01)mv+=tiltSteer;
-  g.jetDir=mv>0.1?1:mv<-0.1?-1:0;
   g.jetX+=mv*72*dt;
+  if(dragAccum){ g.jetX+=dragAccum; if(Math.abs(dragAccum)>0.15)g.jetDir=dragAccum>0?1:-1; dragAccum=0; }
+  else g.jetDir=mv>0.1?1:mv<-0.1?-1:0;
 
   const edge=riverEdges(g.dist), jw=4;
   if(g.invuln<=0){
@@ -1047,7 +1068,8 @@ function drawLabel(str,x,y,col,sc){ sc=sc||1; ctx.fillStyle=col; let cx=x;
 /* -------------------------------------------------------------- ui */
 const exitBtn=document.getElementById('btnExit');
 function showExit(on){ exitBtn.classList.toggle('hidden', !on);
-  if(typeof isTouch!=='undefined'&&isTouch) autoChip.classList.toggle('hidden', !on); }
+  if(typeof isTouch!=='undefined'&&isTouch){ autoChip.classList.toggle('hidden', !on);
+    if(dragHintEl) dragHintEl.style.opacity = on ? '0.65' : '0'; } }
 function show(id){ for(const s of ['titleScreen','pauseScreen','overScreen']) document.getElementById(s).classList.add('hidden');
   if(id) document.getElementById(id).classList.remove('hidden'); }
 let paused=false;
@@ -1085,9 +1107,9 @@ document.getElementById('resumeBtn').addEventListener('click',togglePause);
 
 const isTouch=('ontouchstart'in window)||navigator.maxTouchPoints>0;
 if(isTouch){ document.getElementById('touch').classList.remove('hidden');
-  document.getElementById('tiltHint').textContent='Mobile: tilt L/R to steer · tilt fwd/back for speed · tap TILT to re-center';
+  document.getElementById('tiltHint').textContent='Mobile: drag to steer (or tilt) · tilt fwd/back for speed · tap AUTO for auto-fire';
   document.getElementById('keyHelp').classList.add('hidden');
-  setAuto(true);                                  // auto-fire on by default on phones
+  setAuto(false);                                 // auto-fire OFF by default — tap FIRE, or toggle AUTO
   const tt=document.getElementById('tiltTag');
   tt.textContent='TILT ⟳';
   const recal=e=>{e.preventDefault(); recalibrateTilt();};
