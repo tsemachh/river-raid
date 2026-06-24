@@ -214,10 +214,11 @@ const ACT={
   "....D....","...GGG...",".GGGGGGG.","GGGGGGGGG","GGGGGGGGG","B.B.B.B.B"]}
 };
 for(const k in ACT){ const a=ACT[k]; a.w=a.rows[0].length; a.h=a.rows.length; }
-function drawActor(a,cx,topY,mirror){ const w=a.w, ox=Math.round(cx-w/2), oy=Math.round(topY);
+function drawActor(a,cx,topY,mirror,sc){ sc=sc||1; const w=a.w, ox=Math.round(cx-w*sc/2), oy=Math.round(topY);
   for(let r=0;r<a.h;r++){ const row=a.rows[r];
     for(let c=0;c<w;c++){ const ch=row[c]; if(ch==='.')continue;
-      px(ox+(mirror?(w-1-c):c), oy+r, 1, 1, a.pal[ch]); } } }
+      px(ox+(mirror?(w-1-c):c)*sc, oy+r*sc, sc, sc, a.pal[ch]); } } }
+let sprScale=1;   // sprites render larger on phones (set in the touch block) so it's easier to play
 
 /* ---- REAL map geometry, extracted from the original River Raid map image ----
    48 sections x 16 blocks. Values are river half-width / island half-width in
@@ -948,18 +949,18 @@ function px(x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(x|0,y|0,w,h); }
 function shoreJit(wy,side){
   return 2.4*Math.sin(wy*0.085+side*2.3) + 1.1*Math.sin(wy*0.215+side*5.1) + 0.6*Math.sin(wy*0.5+side);
 }
-function sprite(parsed,cx,topY,color,mirror){
-  const w=parsed.w; ctx.fillStyle=color;
-  const ox=Math.round(cx-w/2), oy=Math.round(topY);
-  for(const p of parsed.pts){ const c=mirror?(w-1-p[0]):p[0]; ctx.fillRect(ox+c,oy+p[1],1,1); }
+function sprite(parsed,cx,topY,color,mirror,sc){
+  sc=sc||1; const w=parsed.w; ctx.fillStyle=color;
+  const ox=Math.round(cx-w*sc/2), oy=Math.round(topY);
+  for(const p of parsed.pts){ const c=mirror?(w-1-p[0]):p[0]; ctx.fillRect(ox+c*sc,oy+p[1]*sc,sc,sc); }
 }
 // genuine (2600 ROM) sprite SHAPE, shaded with an 800XL-style top highlight + bottom shadow
-function drawShaded(parsed,cx,topY,mirror,topCol,baseCol,botCol){
-  const w=parsed.w,h=parsed.h, ox=Math.round(cx-w/2), oy=Math.round(topY);
+function drawShaded(parsed,cx,topY,mirror,topCol,baseCol,botCol,sc){
+  sc=sc||1; const w=parsed.w,h=parsed.h, ox=Math.round(cx-w*sc/2), oy=Math.round(topY);
   const hi=Math.max(1,Math.floor(h*0.28));
   for(const p of parsed.pts){ const c=mirror?(w-1-p[0]):p[0];
     const col = p[1]<hi ? topCol : (p[1]>=h-1 ? botCol : baseCol);
-    ctx.fillStyle=col; ctx.fillRect(ox+c,oy+p[1],1,1); }
+    ctx.fillStyle=col; ctx.fillRect(ox+c*sc,oy+p[1]*sc,sc,sc); }
 }
 const RS=2;                                    // internal super-sampling for a crisper, modern look
 function render(){
@@ -1001,18 +1002,18 @@ function render(){
       for(let r=0;r<s;r++){ const w=Math.round((r+1)*1.25); px(Math.round(bx-w/2),base-s+r,w,1,C.mountain); }
       px(Math.round(bx),base-s+2,Math.max(1,(s/2)|0),Math.max(1,(s-3)),C.mountainAcc);   // blue face
     } else if(o.type===OBJ.FUEL){
-      const w=G.fuel.w,h=G.fuel.h, x0=Math.round(o.x-w/2), y0=Math.round(sy-h);
+      const w=G.fuel.w*sprScale,h=G.fuel.h*sprScale, x0=Math.round(o.x-w/2), y0=Math.round(sy-h);
       px(x0-1,y0-1,w+2,h+2,C.fuelBody);             // magenta depot body
-      sprite(G.fuel,o.x,y0,C.fuelMark,false);        // white "FUEL" markings
-    } else if(o.type===OBJ.SHIP){ drawShaded(G.ship,o.x,sy-G.ship.h,o.dir>0,'#d8d8e0',C.ship,C.shipStripe);
-    } else if(o.type===OBJ.HELI){ drawShaded((Math.floor(g.t*12)&1)?G.heli1:G.heli0,o.x,sy-G.heli0.h,o.dir>0,C.heliRotor,C.heli,'#3a7820');
-    } else if(o.type===OBJ.JET){ drawShaded(G.plane,o.x,sy-G.plane.h,o.dir>0,'#c2f06a',C.plane,'#3c8222');
-    } else if(o.type===OBJ.BALLOON){ drawActor(ACT.balloon,o.x,sy-ACT.balloon.h,false);
+      sprite(G.fuel,o.x,y0,C.fuelMark,false,sprScale);        // white "FUEL" markings
+    } else if(o.type===OBJ.SHIP){ drawShaded(G.ship,o.x,sy-G.ship.h*sprScale,o.dir>0,'#d8d8e0',C.ship,C.shipStripe,sprScale);
+    } else if(o.type===OBJ.HELI){ drawShaded((Math.floor(g.t*12)&1)?G.heli1:G.heli0,o.x,sy-G.heli0.h*sprScale,o.dir>0,C.heliRotor,C.heli,'#3a7820',sprScale);
+    } else if(o.type===OBJ.JET){ drawShaded(G.plane,o.x,sy-G.plane.h*sprScale,o.dir>0,'#c2f06a',C.plane,'#3c8222',sprScale);
+    } else if(o.type===OBJ.BALLOON){ drawActor(ACT.balloon,o.x,sy-ACT.balloon.h*sprScale,false,sprScale);
     } else if(o.type===OBJ.TANK){
       if(o.onBank){ const e=riverEdges(o.wy);
         o.x=o.onBank<0?Math.max(3,e.left/2):Math.min(FIELD_W-3,(e.right+FIELD_W)/2); }
-      px(Math.round(o.x),sy-ACT.tank.h-2,1,2,C.tankDk);   // gun barrel
-      drawActor(ACT.tank,o.x,sy-ACT.tank.h,false);
+      px(Math.round(o.x),sy-ACT.tank.h*sprScale-2,1,2,C.tankDk);   // gun barrel
+      drawActor(ACT.tank,o.x,sy-ACT.tank.h*sprScale,false,sprScale);
     }
   }
 
@@ -1021,10 +1022,10 @@ function render(){
   // enemy missiles (800XL): horizontal streaks crossing the river
   for(const eb of g.ebullets){ const sy=w2s(eb.wy); px(eb.x-2,sy,4,1,'#ff4040'); px(eb.x+(eb.vx>=0?2:-2),sy,1,1,'#ffd0d0'); }
 
-  // player plane — compact 800XL ROM jet (smaller than the 2600 sprite)
+  // player plane — compact 800XL ROM jet (rendered larger on phones for easier play)
   if(g.state==='play'){
     if(!(g.invuln>0&&(Math.floor(g.t*12)%2)))
-      sprite(G.pjet,g.jetX,JET_Y-G.pjet.h/2,C.jet,false);
+      sprite(G.pjet,g.jetX,JET_Y-G.pjet.h*sprScale/2,C.jet,false,sprScale);
   }
 
   // explosions
@@ -1139,6 +1140,7 @@ if(isTouch){ document.getElementById('touch').classList.remove('hidden');
   document.getElementById('tiltHint').textContent='Mobile: drag to steer (or tilt) · tilt fwd/back for speed · tap AUTO for auto-fire';
   document.getElementById('keyHelp').classList.add('hidden');
   setAuto(false);                                 // auto-fire OFF by default — tap FIRE, or toggle AUTO
+  sprScale=1.6;                                    // bigger plane & enemies on phones -> easier to see and play
   const tt=document.getElementById('tiltTag');
   tt.textContent='TILT ⟳';
   const recal=e=>{e.preventDefault(); recalibrateTilt();};
