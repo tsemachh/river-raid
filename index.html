@@ -415,6 +415,21 @@ const tIL=new Int16Array(T_TOTAL), tIR=new Int16Array(T_TOTAL);
     for(let L=0;L<T_TOTAL;L++){ if(arr[L]<=0){ out[L]=arr[L]; continue; } let s=0,n=0; for(let k=-R;k<=R;k++){ const i=L+k; if(i>=0&&i<T_TOTAL&&arr[i]>0){ s+=arr[i]; n++; } } out[L]=Math.round(s/n); }
     arr.set(out); };
   smI(tIL); smI(tIR);
+  // taper each island run to a POINT at both ends so it never looks sliced flat across
+  for(let i=0;i<T_TOTAL;){
+    if(tIL[i]>0){
+      let j=i; while(j<T_TOTAL && tIL[j]>0) j++;          // island run = [i, j)
+      const run=j-i, tap=Math.min(14, Math.max(1, run>>1));
+      for(let k=0;k<tap;k++){
+        const f=(k+1)/(tap+1);                            // 0 at the tip -> 1 inside
+        let a=i+k, cA=(tIL[a]+tIR[a])/2, hA=(tIR[a]-tIL[a])/2*f;
+        tIL[a]=Math.round(cA-hA); tIR[a]=Math.round(cA+hA);
+        let b=j-1-k, cB=(tIL[b]+tIR[b])/2, hB=(tIR[b]-tIL[b])/2*f;
+        tIL[b]=Math.round(cB-hB); tIR[b]=Math.round(cB+hB);
+      }
+      i=j;
+    } else i++;
+  }
 })();
 
 /* ----------------------------------------------------------- 16-bit LFSR */
