@@ -356,7 +356,7 @@ const C={
   bank:'#58a838', bankEdge:'#7c1e1e',      // 800XL: green land, dark-maroon jagged shoreline
   island:'#58a838', islandEdge:'#7c1e1e',
   mountain:'#7c1e1e', mountainAcc:'#4858d8',
-  jet:'#e6d22a',   // bright yellow player jet, like the original
+  jet:'#e0e0e0',   // compact silver/white player jet (as before)
   ship:'#101018', shipStripe:'#cc3030', shipHull:'#40c0c0',  // black hull, red+cyan waterline
   heli:'#5fae3a', heliRotor:'#f0d040', heliDk:'#2f6018',   // green body + bright yellow rotor (original look)
   plane:'#8ad24a',
@@ -1033,7 +1033,7 @@ function render(){
   // player plane — compact 800XL ROM jet (rendered larger on phones for easier play)
   if(g.state==='play'){
     if(!(g.invuln>0&&(Math.floor(g.t*12)%2)))
-      sprite(G.player,g.jetX,JET_Y-G.player.h*sprScale/2,C.jet,false,sprScale);
+      sprite(G.pjet,g.jetX,JET_Y-G.pjet.h*sprScale/2,C.jet,false,sprScale);
   }
 
   // explosions
