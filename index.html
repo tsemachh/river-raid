@@ -171,10 +171,12 @@ const SPR = {
   jetMove:["0000100","0000100","0000100","0001100","0011110","0011111","0011111","0010111","0000101","0000100","0001100","0011110","0010111","0000001"],
   ship:   ["00010000","00010000","00110000","01111000","11111111","11111110","11111100","01111100"],
   plane:  ["10000000","11000110","11111111","01001111","00111000","00110000"],
-  heli0:  ["00000111","00011100","00000100","00001110","10011111","11111111","11111111","10001110","00000100","00001110"],
-  heli1:  ["00011100","00000111","00000100","00001110","10011111","11111111","11111111","10001110","00000100","00001110"],
+  // side-view helicopter (Fort-Apocalypse style): full rotor on top, cockpit left, tail boom + fin right, skids
+  heli0:  ["111111111111100","000010000000000","001111100000000","011111110000000","111111111111100","011111111111110","001111100011100","001001000000000","010000100000000"],
+  heli1:  ["000111111111000","000010000000000","001111100000000","011111110000000","111111111111100","011111111111110","001111100011100","001001000000000","010000100000000"],
   house:  ["00111000","01111100","11111110","11111110","10101010","10101010","11111110","00000000","00000000","00000100","00000100","00000100","00001110","00001110","00011111","00011111","00001110","00000100","00000100"],
-  fuel:   ["0111110","1101111","1100111","1101111","1101111","1111111","1101011","1101011","1101011","1100011","1111111","1100011","1101111","1100111","1101111","1100011","1111111","1101111","1101111","1101111","1101111","1100011","1111111"],
+  // "FUEL" stacked vertically (red letters on the white tank) — clean, nothing clipped
+  fuel:   ["11111","10000","11110","10000","10000","00000","10001","10001","10001","10001","11111","00000","11111","10000","11110","10000","11111","00000","10000","10000","10000","10000","11111"],
   tank:   ["00011000","00011000","01111110","11111111","11111111","01111110","10100101"],
   pjet:   ["00001000","00001000","00011100","00111110","01101011","01001001","00011100","00101010"],
   // big, classic River-Raid-style jet (used for the player) — pointed nose, swept wings, tail fins
@@ -358,7 +360,7 @@ const C={
   mountain:'#7c1e1e', mountainAcc:'#4858d8',
   jet:'#e0e0e0',   // compact silver/white player jet (as before)
   ship:'#101018', shipStripe:'#cc3030', shipHull:'#40c0c0',  // black hull, red+cyan waterline
-  heli:'#5fae3a', heliRotor:'#f0d040', heliDk:'#2f6018',   // green body + bright yellow rotor (original look)
+  heli:'#e6c224', heliRotor:'#d8e4ec', heliDk:'#9a7e10',   // yellow body + silver rotor (Fort-Apocalypse style, not green)
   plane:'#8ad24a',
   tank:'#b0b040', tankDk:'#6a6a20',
   fuelBody:'#dcdce6', fuelMark:'#d42424',   // white tank with red "FUEL", like the original
@@ -1011,7 +1013,7 @@ function render(){
       px(Math.round(bx),base-s+2,Math.max(1,(s/2)|0),Math.max(1,(s-3)),C.mountainAcc);   // blue face
     } else if(o.type===OBJ.FUEL){
       const w=G.fuel.w*sprScale,h=G.fuel.h*sprScale, x0=Math.round(o.x-w/2), y0=Math.round(sy-h);
-      px(x0-1,y0-1,w+2,h+2,C.fuelBody);             // magenta depot body
+      px(x0-3,y0-3,w+6,h+6,C.fuelBody);             // white tank with padding so no letter is clipped
       sprite(G.fuel,o.x,y0,C.fuelMark,false,sprScale);        // white "FUEL" markings
     } else if(o.type===OBJ.SHIP){ drawShaded(G.ship,o.x,sy-G.ship.h*sprScale,o.dir>0,'#d8d8e0',C.ship,C.shipStripe,sprScale);
     } else if(o.type===OBJ.HELI){ drawShaded((Math.floor(g.t*12)&1)?G.heli1:G.heli0,o.x,sy-G.heli0.h*sprScale,o.dir>0,C.heliRotor,C.heli,C.heliDk,sprScale);
