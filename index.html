@@ -153,6 +153,7 @@
       <div class="score-line" id="bestScore">BEST 0</div>
       <button class="btn" id="continueBtn">CONTINUE</button>
       <button class="btn" id="againBtn">PLAY AGAIN</button>
+      <button class="btn" id="homeBtn" style="background:#5b6b86;box-shadow:0 4px 0 #2e3950">HOME</button>
     </div>
 
     <div id="howtoScreen" class="screen hidden">
@@ -219,7 +220,7 @@ const ACT={
  heli0:{pal:{G:'#4fae3a',Y:'#f0d040',B:'#3a6ad0'},rows:[
   "...GGGG...","GGGG......","..GG......",".GGGGG...B","YYYYYYYYYY",".GGGG....B","...G......",".GGGGG...."]},
  heli1:{pal:{G:'#4fae3a',Y:'#f0d040',B:'#3a6ad0'},rows:[
-  "...GGGG...","GGGG......","..GG......",".GGGGG...B","YYYYYYYYYY",".GGGG....B","...G......",".GGGGG...."]},
+  "...GGGG...","GGGG......","..GG......",".GGGGG...B","...YYYY...",".GGGG....B","...G......",".GGGGG...."]},
  plane:{pal:{G:'#86d24a',D:'#3c8222',R:'#ff8a20'},rows:[
   ".......GGG...","R..GGGGGGGGG.","RGGGGGGGGGGGG","R..GGGGGGGGG.",".......GGG..."]},
  balloon:{pal:{R:'#e03a3a',Y:'#f0d048',K:'#8a5a2a',W:'#ffffff'},rows:[
@@ -1208,6 +1209,8 @@ holdRepeat('brUp',()=>setBr(startBridge+1));
 document.getElementById('startBtn').addEventListener('click',()=>startGame(startBridge-1));
 document.getElementById('againBtn').addEventListener('click',()=>startGame(0));
 document.getElementById('continueBtn').addEventListener('click',()=>startGame(lastStageSec));
+document.getElementById('homeBtn').addEventListener('click',()=>{ A2.stopEngine(); showExit(false);
+  document.getElementById('tiltTag').classList.add('hidden'); show('titleScreen'); });   // back to title from game over
 document.getElementById('resumeBtn').addEventListener('click',togglePause);
 
 const isTouch=('ontouchstart'in window)||navigator.maxTouchPoints>0;
