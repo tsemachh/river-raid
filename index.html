@@ -781,7 +781,9 @@ function update(dt){
   const accelOn = keys['ArrowUp'] || (dragId!==null&&padThrottle>0.1) || (tiltOn && tiltThrottle>0.12);
   A2.setThrust(accelOn, (g.speed-0.6)/1.6);            // engine roar only while speeding up
   // fly forward
-  const v=g.baseV*g.speed; g.dist+=v*dt;
+  const v=g.baseV*g.speed;                 // base velocity (enemy horizontal patrol uses this)
+  const vh=PLAY_H/172;                      // scroll scaled to playfield height -> same on-screen speed on tall mobile views
+  g.dist+=v*vh*dt;
   g.level=gen.level;
   if(g.banner>0) g.banner-=dt;
   // each bridge you clear and fly past = a new level
@@ -826,7 +828,7 @@ function update(dt){
   if((keys[' ']||autoFire)&&g.fireCool<=0&&g.bullets.length<2){
     g.bullets.push({x:g.jetX,sy:JET_Y-6}); g.fireCool=0.28; A2.fire();
   }
-  for(const b of g.bullets) b.sy-=250*dt;
+  for(const b of g.bullets) b.sy-=250*(PLAY_H/172)*dt;   // bullets keep the same on-screen speed on tall views
   g.bullets=g.bullets.filter(b=>b.sy>-6);
 
   // 800XL: enemies shoot back. Missiles travel HORIZONTALLY across the river
