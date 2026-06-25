@@ -171,9 +171,9 @@ const SPR = {
   jetMove:["0000100","0000100","0000100","0001100","0011110","0011111","0011111","0010111","0000101","0000100","0001100","0011110","0010111","0000001"],
   ship:   ["00010000","00010000","00110000","01111000","11111111","11111110","11111100","01111100"],
   plane:  ["10000000","11000110","11111111","01001111","00111000","00110000"],
-  // side-view helicopter (Fort-Apocalypse style): full rotor on top, cockpit left, tail boom + fin right, skids
-  heli0:  ["111111111111100","000010000000000","001111100000000","011111110000000","111111111111100","011111111111110","001111100011100","001001000000000","010000100000000"],
-  heli1:  ["000111111111000","000010000000000","001111100000000","011111110000000","111111111111100","011111111111110","001111100011100","001001000000000","010000100000000"],
+  // side-view helicopter: thin rotor on top, rounded cockpit (left), tail boom + tail fin (right), skids
+  heli0:  ["0111111111111110","0000001100000000","0001111110000000","0011111111000000","0111111111111110","0111111111111110","0011111100011110","0001111000000110","0001001000000000","0011111000000000"],
+  heli1:  ["0000011111100000","0000001100000000","0001111110000000","0011111111000000","0111111111111110","0111111111111110","0011111100011110","0001111000000110","0001001000000000","0011111000000000"],
   house:  ["00111000","01111100","11111110","11111110","10101010","10101010","11111110","00000000","00000000","00000100","00000100","00000100","00001110","00001110","00011111","00011111","00001110","00000100","00000100"],
   // "FUEL" stacked vertically (red letters on the white tank) — clean, nothing clipped
   fuel:   ["11111","10000","11110","10000","10000","00000","10001","10001","10001","10001","11111","00000","11111","10000","11110","10000","11111","00000","10000","10000","10000","10000","11111"],
@@ -1150,7 +1150,7 @@ if(isTouch){ document.getElementById('touch').classList.remove('hidden');
   document.getElementById('tiltHint').textContent='Mobile: drag to steer · drag up/down (or tilt) for speed · tap AUTO for auto-fire';
   document.getElementById('keyHelp').classList.add('hidden');
   setAuto(false);                                 // auto-fire OFF by default — tap FIRE, or toggle AUTO
-  sprScale=1.6;                                    // bigger plane & enemies on phones -> easier to see and play
+  sprScale=1.5;                                    // bigger sprites on phones, integer device-px (crisp, pixel-perfect)
   const tt=document.getElementById('tiltTag');
   tt.textContent='TILT ⟳';
   const recal=e=>{e.preventDefault(); recalibrateTilt();};
