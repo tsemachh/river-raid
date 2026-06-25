@@ -590,7 +590,8 @@ const A2=(()=>{
   function lowFuel(){ if(!ctx)return; const t=ctx.currentTime; const o=ctx.createOscillator(),g=ctx.createGain();
     o.type='square'; o.frequency.value=300; g.gain.setValueAtTime(0.001,t); g.gain.linearRampToValueAtTime(0.14,t+0.02);
     g.gain.exponentialRampToValueAtTime(0.001,t+0.22); o.connect(g); g.connect(master); o.start(t); o.stop(t+0.24); }
-  return {init,resume,startEngine,stopEngine,setThrust,heliShoot,fire,explosion,refuelBeep,lowFuel};
+  function mute(on){ if(master) master.gain.value = on?0:0.45; }
+  return {init,resume,startEngine,stopEngine,setThrust,heliShoot,fire,explosion,refuelBeep,lowFuel,mute};
 })();
 
 /* -------------------------------------------------------------- game */
@@ -699,10 +700,14 @@ function safeSpawnX(wy){
 }
 
 /* -------------------------------------------------------------- input */
-const keys={}; let tiltSteer=0, tiltThrottle=0, tiltOn=false, autoFire=false;
+const keys={}; let tiltSteer=0, tiltThrottle=0, tiltOn=false, autoFire=false, muted=false;
+try{ muted = localStorage.getItem('rr_mute')==='1'; }catch(e){}
+function setMute(on){ muted=on; if(A2&&A2.mute)A2.mute(on); try{localStorage.setItem('rr_mute', on?'1':'');}catch(e){}
+  const mb=document.getElementById('muteBtn'); if(mb) mb.textContent = on?'\u{1F507}':'\u{1F50A}'; }
 addEventListener('keydown',e=>{ if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key))e.preventDefault();
   keys[e.key]=true; if(e.key==='p'||e.key==='P')togglePause();
-  if((e.key==='a'||e.key==='A')&&!e.repeat) setAuto(!autoFire); });   // A = toggle auto-fire (web)
+  if((e.key==='a'||e.key==='A')&&!e.repeat) setAuto(!autoFire);        // A = toggle auto-fire
+  if((e.key==='m'||e.key==='M')&&!e.repeat) setMute(!muted); });       // M = mute/unmute
 addEventListener('keyup',e=>{ keys[e.key]=false; });
 function hold(id,k){ const el=document.getElementById(id); if(!el)return;
   const on=e=>{e.preventDefault();keys[k]=true;}, off=e=>{e.preventDefault();keys[k]=false;};
@@ -809,7 +814,7 @@ function update(dt){
 
   // steer — keys / tilt give a velocity; the touch paddle moves the jet directly (1:1 drag)
   let mv=0; if(keys['ArrowLeft'])mv-=1; if(keys['ArrowRight'])mv+=1;
-  if(tiltOn&&Math.abs(tiltSteer)>0.01)mv+=tiltSteer;
+  if(tiltOn&&dragId===null&&Math.abs(tiltSteer)>0.01)mv+=tiltSteer;   // tilt steers only when not dragging
   g.jetX+=mv*72*dt;
   if(dragAccum){ g.jetX+=dragAccum; if(Math.abs(dragAccum)>0.15)g.jetDir=dragAccum>0?1:-1; dragAccum=0; }
   else g.jetDir=mv>0.1?1:mv<-0.1?-1:0;
@@ -960,14 +965,14 @@ function respawn(){
   game.waiting=true; game.banner=0;            // wait on the bridge; clear any LEVEL banner
 }
 function endGame(){ game.state='over'; A2.stopEngine(); showExit(false);
-  if(game.score>best)best=game.score;
+  if(game.score>best){best=game.score; try{localStorage.setItem('rr_best',best);}catch(e){}}
   document.getElementById('finalScore').textContent='SCORE '+game.score;
   document.getElementById('bestScore').textContent ='BEST  '+best;
   const cb=document.getElementById('continueBtn');
   if(lastStageSec>0){ cb.textContent='CONTINUE → STAGE '+(lastStageSec+1); cb.classList.remove('hidden'); }
   else cb.classList.add('hidden');
   show('overScreen'); }
-let best=0;
+let best=0; try{ best=(+localStorage.getItem('rr_best'))||0; }catch(e){}   // persisted high score
 
 /* -------------------------------------------------------------- render */
 function px(x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(x|0,y|0,w,h); }
@@ -1150,7 +1155,7 @@ function exitToTitle(){ if(!game)return; paused=false; A2.stopEngine(); game.sta
 exitBtn.addEventListener('click', exitToTitle);
 function goFullscreen(){ const el=document.documentElement;
   const fn=el.requestFullscreen||el.webkitRequestFullscreen; if(fn){ try{ fn.call(el); }catch(e){} } }
-function startGame(sec){ sec=(typeof sec==='number')?sec:0; A2.init(); A2.resume();
+function startGame(sec){ sec=(typeof sec==='number')?sec:0; A2.init(); A2.resume(); A2.mute(muted);
   recalibrateTilt();                                   // neutral = how you're holding it now
   if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function')
     DeviceOrientationEvent.requestPermission().then(p=>{if(p==='granted')enableTilt();}).catch(()=>{});
