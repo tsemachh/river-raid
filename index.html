@@ -605,7 +605,7 @@ function newGame(startSec){
   const worldStart=startSec*SECTION_BLOCKS*BLOCK_H;  // align terrain to this section/bridge
   const initSnap={lo:R_lo,hi:R_hi,blk:gen.blk,level:gen.level,pf:gen.pf,prevId:gen.prevId,sec:gen.sec};
   game={ state:'play', score:0, lives:4, fuel:1.0, nextLife:10000, level:startSec+1,
-    dist:worldStart, speed:1.0, baseV:Math.min(88,42+startSec*1.6),
+    dist:worldStart, speed:1.0, baseV:Math.min(70,32+startSec*1.3),
     blocks:[], worldTop:worldStart,
     jetX:CENTER, jetDir:0,
     bullets:[], explosions:[], objs:[],
@@ -777,7 +777,7 @@ function update(dt){
     else return;          // frozen: no scroll, no fuel burn, no collisions
   }
   // throttle — keys, drag the pad up/down, or tilt the phone for variable speed
-  const SPDMAX=2.2;
+  const SPDMAX=1.9;
   let target=1.0;
   if(keys['ArrowUp'])target=SPDMAX;
   else if(keys['ArrowDown'])target=0.6;
@@ -796,7 +796,7 @@ function update(dt){
   for(const o of g.objs){
     if(o.type===OBJ.BRIDGE && !o.counted && g.dist>o.wy){
       o.counted=true;
-      if(!o.alive){ g.shownLevel++; g.banner=2.0; g.baseV=Math.min(88,g.baseV+2); lastStageSec=Math.max(lastStageSec,(o.sec||0)); }  // destroyed -> advance
+      if(!o.alive){ g.shownLevel++; g.banner=2.0; g.baseV=Math.min(70,g.baseV+1.5); lastStageSec=Math.max(lastStageSec,(o.sec||0)); }  // destroyed -> advance
     }
   }
 
@@ -891,8 +891,8 @@ function update(dt){
       if(o.type===OBJ.BRIDGE){const e=riverEdges(o.wy);ox=e.cx;ow=e.right-e.left;oh=8;} else {ox=o.x;ow=o.w+8;oh=o.h+4;}
       if(Math.abs(b.x-ox)<ow/2 && b.sy>sy-oh-3 && b.sy<sy+5){
         o.alive=false; b.sy=-99; addScore(SCORE[o.type]||0);
-        boom(ox,sy,o.type===OBJ.BRIDGE); A2.explosion(o.type===OBJ.BRIDGE);
-        buzz(o.type===OBJ.BRIDGE?[0,30,30,60]:18);   // bridge = strong double buzz, enemy = light tap
+        if(o.type===OBJ.BRIDGE){ boom(ox,sy,true); A2.explosion(true); buzz([0,30,30,60]); }  // fire effect only for bridges
+        else { buzz(18); }                          // other enemies: just a vibrate, no fire effect
         if(o.type===OBJ.BRIDGE){           // bonus if a tank is crossing the bridge (750 total)
           for(const t of g.objs){ if(t.alive&&t.type===OBJ.TANK&&t.onBridge&&Math.abs(t.wy-o.wy)<BLOCK_H){
             t.alive=false; addScore(250); boom(t.x,sy,false); } }
