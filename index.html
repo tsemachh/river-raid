@@ -216,11 +216,11 @@ const ACT={
   "WWWWWWWWW","WWWWWWWWW","..WWWWW..","...WWW...","..G.W.G..","..R...R.."]},
  ship:{pal:{H:'#d23a3a',D:'#101018',C:'#46d0e0'},rows:[   // red hull, black superstructure, cyan waterline
   ".....DD......","....DDDD.....","...DDDDDD....","HHHHHHHHHHHHH",".HHHHHHHHHHH.","CCCCCCCCCCCCC"]},
- // original 800XL helicopter outline, coloured: green body, yellow main rotor, blue tail rotor
+ // helicopter: spinning rotor on TOP, green body, blue tail boom (two frames = rotor spin)
  heli0:{pal:{G:'#4fae3a',Y:'#f0d040',B:'#3a6ad0'},rows:[
-  "...GGGG...","GGGG......","..GG......",".GGGGG...B","YYYYYYYYYY",".GGGG....B","...G......",".GGGGG...."]},
+  "YYYYYYYYYYY",".....Y.....","...GGGGG...","..GGGGGGG..",".GGGGGGGGBB",".GGGGGGG...","..GGGGG....","...G.G....."]},
  heli1:{pal:{G:'#4fae3a',Y:'#f0d040',B:'#3a6ad0'},rows:[
-  "...GGGG...","GGGG......","..GG......",".GGGGG...B","...YYYY...",".GGGG....B","...G......",".GGGGG...."]},
+  "...YYYYY...",".....Y.....","...GGGGG...","..GGGGGGG..",".GGGGGGGGBB",".GGGGGGG...","..GGGGG....","...G.G....."]},
  plane:{pal:{G:'#86d24a',D:'#3c8222',R:'#ff8a20'},rows:[
   ".......GGG...","R..GGGGGGGGG.","RGGGGGGGGGGGG","R..GGGGGGGGG.",".......GGG..."]},
  balloon:{pal:{R:'#e03a3a',Y:'#f0d048',K:'#8a5a2a',W:'#ffffff'},rows:[
@@ -1057,11 +1057,12 @@ function render(){
       const wy2=hy+rh+Math.round(wh*0.35), wsz=Math.max(1,Math.round(1.4*s));
       px(hx+Math.round(ww*0.2),wy2,wsz,wsz,C.houseWin); px(hx+Math.round(ww*0.55),wy2,wsz,wsz,C.houseWin);  // windows
     } else if(o.type===OBJ.FUEL){
-      const fw=G.fuel.w*sprScale, fh=G.fuel.h*sprScale, band=Math.max(2,Math.round(2*sprScale));
-      const w=Math.round(fw+8), h=Math.round(fh+band*2+4), x0=Math.round(o.x-w/2), y0=Math.round(sy-h);
+      const fsc=(typeof isTouch!=='undefined'&&isTouch)?sprScale*0.7:sprScale;   // smaller depot on phones
+      const fw=G.fuel.w*fsc, fh=G.fuel.h*fsc, band=Math.max(2,Math.round(2*fsc));
+      const w=Math.round(fw+7), h=Math.round(fh+band*2+3), x0=Math.round(o.x-w/2), y0=Math.round(sy-h);
       px(x0,y0,w,h,C.fuelBody);                                       // white tank
       px(x0,y0,w,band,C.fuelMark); px(x0,y0+h-band,w,band,C.fuelMark); // red bands (striped barrel)
-      sprite(G.fuel,o.x,Math.round(y0+band+2),C.fuelMark,false,sprScale); // red "FUEL"
+      sprite(G.fuel,o.x,Math.round(y0+band+1),C.fuelMark,false,fsc);  // red "FUEL"
     } else if(o.type===OBJ.SHIP){ drawActor(ACT.ship,o.x,sy-ACT.ship.h*sprScale,o.dir>0,sprScale);   // red hull, black superstructure
     } else if(o.type===OBJ.HELI){ drawActor((Math.floor(g.t*14)&1)?ACT.heli1:ACT.heli0,o.x,sy-ACT.heli0.h*sprScale,o.dir>0,sprScale);   // yellow rotor / green body / blue tail
     } else if(o.type===OBJ.JET){ drawShaded(G.plane,o.x,sy-G.plane.h*sprScale,o.dir>0,'#c2f06a',C.plane,'#3c8222',sprScale);
