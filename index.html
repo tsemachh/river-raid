@@ -204,11 +204,11 @@ const ACT={
  jet:{pal:{W:'#e6e6ee',G:'#8f97a4',C:'#46c8e6',R:'#ff5a28'},rows:[
   "....W....","....W....","...WWW...","..WWCWW..","..WWCWW..",
   "WWWWWWWWW","WWWWWWWWW","..WWWWW..","...WWW...","..G.W.G..","..R...R.."]},
- ship:{pal:{H:'#b4b4c2',D:'#565663',R:'#d23a3a'},rows:[
-  ".....DD......","....DDDD.....","...RDDDDR....","HHHHHHHHHHHHH",".HHHHHHHHHHH.","..HHHHHHHHH.."]},
- heli0:{pal:{K:'#3a3a46',Y:'#46c8c8',D:'#1f7a7a',C:'#a8e4ff'},rows:[
+ ship:{pal:{H:'#d23a3a',D:'#101018',C:'#46d0e0'},rows:[   // red hull, black superstructure, cyan waterline
+  ".....DD......","....DDDD.....","...DDDDDD....","HHHHHHHHHHHHH",".HHHHHHHHHHH.","CCCCCCCCCCCCC"]},
+ heli0:{pal:{K:'#f0d040',Y:'#4fae3a',D:'#3a6ad0',C:'#bfe0ff'},rows:[  // yellow rotor, green body, blue tail
   "KKKKKKKKKKK",".....K.....","...YYYYY...","..YYYYYYY..",".YYYCCYYYY.","..YY.YY....","...DDDD...."]},
- heli1:{pal:{K:'#3a3a46',Y:'#46c8c8',D:'#1f7a7a',C:'#a8e4ff'},rows:[
+ heli1:{pal:{K:'#f0d040',Y:'#4fae3a',D:'#3a6ad0',C:'#bfe0ff'},rows:[
   "..K.....K..","...K...K...","....KKK....","...YYYYY...",".YYYCCYYYY.","..YYYYYY...","...DDDD...."]},
  plane:{pal:{G:'#86d24a',D:'#3c8222',R:'#ff8a20'},rows:[
   ".......GGG...","R..GGGGGGGGG.","RGGGGGGGGGGGG","R..GGGGGGGGG.",".......GGG..."]},
@@ -364,6 +364,7 @@ const C={
   plane:'#8ad24a',
   tank:'#b0b040', tankDk:'#6a6a20',
   fuelBody:'#dcdce6', fuelMark:'#d42424',   // white tank with red "FUEL", like the original
+  houseWall:'#e6e6ee', houseRoof:'#161620', houseWin:'#3a6ad0',   // white building, black roof, blue windows
   bridge:'#9a6a2a', bridgeDk:'#5a3a12',     // brown wooden bridge
   road:'#9a9a9a', roadEdge:'#d8d040',       // grey road with yellow border
   bullet:'#ffffff',
@@ -626,7 +627,7 @@ function pushBlock(){
   const bridgeWy=b.worldY+4;
   if(b.obj===OBJ.BRIDGE) game.objs.push({type:OBJ.BRIDGE,wy:bridgeWy,sec:b.sec,alive:true});
   else if(b.obj!==OBJ.NONE){
-    const dim=b.obj===OBJ.FUEL?G.fuel:b.obj===OBJ.SHIP?G.ship:b.obj===OBJ.HELI?G.heli0:b.obj===OBJ.JET?G.plane:ACT.balloon;
+    const dim=b.obj===OBJ.FUEL?G.fuel:b.obj===OBJ.SHIP?ACT.ship:b.obj===OBJ.HELI?ACT.heli0:b.obj===OBJ.JET?G.plane:ACT.balloon;
     // place within the actual river channel (pick a side if an island splits it)
     const e=riverEdges(cy), m=dim.w/2+1, frac=b.rx/63; let lo=e.left+m, hi=e.right-m;
     if(e.islL>2){ const lw=e.islL-e.left, rw=e.right-e.islR;
@@ -654,6 +655,10 @@ function pushBlock(){
   // decorative maroon mountains on the green banks (the 800XL "landscape" look)
   if(blockCount>=4 && !b.isBridge && (b.rx&1)===0){
     game.objs.push({type:OBJ.MOUNTAIN,wy:b.worldY+(b.rx%BLOCK_H),onBank:(b.rx&2)?1:-1,size:6+(b.rx&3)*3,alive:true});
+  }
+  // white houses with black roofs on the banks
+  if(blockCount>=4 && !b.isBridge && (b.rx%13)===5){
+    game.objs.push({type:OBJ.HOUSE,wy:b.worldY+(b.rx%BLOCK_H),onBank:(b.rx&4)?1:-1,alive:true});
   }
 }
 // world<->screen : feature ahead (larger wy) is higher up; flows DOWN toward jet
@@ -1022,12 +1027,24 @@ function render(){
       const s=o.size, base=sy;
       for(let r=0;r<s;r++){ const w=Math.round((r+1)*1.25); px(Math.round(bx-w/2),base-s+r,w,1,C.mountain); }
       px(Math.round(bx),base-s+2,Math.max(1,(s/2)|0),Math.max(1,(s-3)),C.mountainAcc);   // blue face
+    } else if(o.type===OBJ.HOUSE){
+      const e=riverEdges(o.wy);
+      const bx=o.onBank<0?Math.max(7,e.left*0.5):Math.min(FIELD_W-7,(e.right+FIELD_W)/2);
+      const s=sprScale, ww=Math.round(12*s), wh=Math.round(5*s), rh=Math.round(4*s);
+      const hx=Math.round(bx-ww/2), hy=Math.round(sy-wh-rh);
+      px(hx,hy+rh,ww,wh,C.houseWall);                          // white wall
+      px(hx-1,hy+rh-1,ww+2,1,C.houseRoof);
+      for(let r=0;r<rh;r++){ const rw=Math.round(ww*(1-r/(rh+1))); px(Math.round(bx-rw/2),hy+r,rw,1,C.houseRoof); } // black pitched roof
+      const wy2=hy+rh+Math.round(wh*0.35), wsz=Math.max(1,Math.round(1.4*s));
+      px(hx+Math.round(ww*0.2),wy2,wsz,wsz,C.houseWin); px(hx+Math.round(ww*0.55),wy2,wsz,wsz,C.houseWin);  // windows
     } else if(o.type===OBJ.FUEL){
-      const w=G.fuel.w*sprScale,h=G.fuel.h*sprScale, x0=Math.round(o.x-w/2), y0=Math.round(sy-h);
-      px(x0-3,y0-3,w+6,h+6,C.fuelBody);             // white tank with padding so no letter is clipped
-      sprite(G.fuel,o.x,y0,C.fuelMark,false,sprScale);        // white "FUEL" markings
-    } else if(o.type===OBJ.SHIP){ drawShaded(G.ship,o.x,sy-G.ship.h*sprScale,o.dir>0,'#d8d8e0',C.ship,C.shipStripe,sprScale);
-    } else if(o.type===OBJ.HELI){ sprite(G.heli0,o.x,sy-G.heli0.h*sprScale,C.heli,o.dir>0,sprScale);   // flat yellow, exactly like the 800XL
+      const fw=G.fuel.w*sprScale, fh=G.fuel.h*sprScale, band=Math.max(2,Math.round(2*sprScale));
+      const w=Math.round(fw+8), h=Math.round(fh+band*2+4), x0=Math.round(o.x-w/2), y0=Math.round(sy-h);
+      px(x0,y0,w,h,C.fuelBody);                                       // white tank
+      px(x0,y0,w,band,C.fuelMark); px(x0,y0+h-band,w,band,C.fuelMark); // red bands (striped barrel)
+      sprite(G.fuel,o.x,Math.round(y0+band+2),C.fuelMark,false,sprScale); // red "FUEL"
+    } else if(o.type===OBJ.SHIP){ drawActor(ACT.ship,o.x,sy-ACT.ship.h*sprScale,o.dir>0,sprScale);   // red hull, black superstructure
+    } else if(o.type===OBJ.HELI){ drawActor((Math.floor(g.t*14)&1)?ACT.heli1:ACT.heli0,o.x,sy-ACT.heli0.h*sprScale,o.dir>0,sprScale);   // yellow rotor / green body / blue tail
     } else if(o.type===OBJ.JET){ drawShaded(G.plane,o.x,sy-G.plane.h*sprScale,o.dir>0,'#c2f06a',C.plane,'#3c8222',sprScale);
     } else if(o.type===OBJ.BALLOON){ drawActor(ACT.balloon,o.x,sy-ACT.balloon.h*sprScale,false,sprScale);
     } else if(o.type===OBJ.TANK){
