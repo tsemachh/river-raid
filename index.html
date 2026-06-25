@@ -83,13 +83,13 @@
   #btnFire{ position:absolute; right:10px; bottom:10px; width:58px; height:58px;
     font-size:12px; letter-spacing:1px; background:rgba(170,42,42,.72); border-color:rgba(255,150,150,.78); }
   #btnFire.auto{ background:rgba(180,110,30,.8); border-color:rgba(255,210,120,.85); }
-  #autoChip{ position:absolute; top:8px; left:8px; pointer-events:auto;
+  #autoChip{ position:absolute; right:10px; bottom:74px; z-index:6; pointer-events:auto;
     font:bold 12px/1 "Courier New",monospace; color:#ff8a7a; cursor:pointer;
-    background:rgba(46,16,16,.78); border:1px solid rgba(255,120,100,.6); border-radius:12px; padding:7px 12px; }
+    background:rgba(46,16,16,.8); border:1px solid rgba(255,120,100,.6); border-radius:12px; padding:7px 12px; }
   #autoChip.on{ color:#fff; background:#c0392b; border-color:#ff9a8a; box-shadow:0 0 10px rgba(220,60,40,.6); }
-  /* vertical speed gauge on the right edge of the stage */
-  #spdGauge{ position:absolute; right:8px; top:50%; transform:translateY(-50%);
-    width:12px; height:42%; max-height:180px; border:1px solid rgba(150,170,255,.5); border-radius:7px;
+  /* short speed gauge on the right edge (kept clear of the FIRE/AUTO buttons) */
+  #spdGauge{ position:absolute; right:8px; top:38%; transform:translateY(-50%);
+    width:12px; height:24%; max-height:130px; border:1px solid rgba(150,170,255,.5); border-radius:7px;
     background:rgba(15,18,32,.6); overflow:hidden; pointer-events:none; }
   #spdGauge i{ position:absolute; left:0; right:0; bottom:0; height:28%; background:linear-gradient(#7ddb4a,#2f7d18); }
   #spdGauge b{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); font:bold 7px/1 "Courier New",monospace; color:rgba(255,255,255,.6); }
@@ -111,8 +111,8 @@
   <div id="stage">
     <canvas id="cv" width="384" height="428"></canvas>
 
+    <button id="autoChip" class="hidden">AUTO ✗</button>
     <div id="touch" class="hidden">
-      <button id="autoChip">AUTO ✗</button>
       <div id="spdGauge"><i></i><b>SPD</b></div>
       <div class="tbtn" id="btnFire">FIRE</div>
       <div id="dragHint">◀ drag to steer · drag up/down = speed ▶</div>
@@ -126,7 +126,7 @@
         Fly over fuel depots to refuel — run dry and you crash.</div>
       <div class="keys" id="keyHelp">
         <kbd>◀</kbd><kbd>▶</kbd> steer &nbsp; <kbd>▲</kbd> accelerate &nbsp;
-        <kbd>▼</kbd> brake &nbsp; <kbd>Space</kbd> fire &nbsp; <kbd>P</kbd> pause
+        <kbd>▼</kbd> brake &nbsp; <kbd>Space</kbd> fire &nbsp; <kbd>A</kbd> auto-fire &nbsp; <kbd>P</kbd> pause
       </div>
       <div class="bridgesel">
         <span>START BRIDGE</span>
@@ -171,9 +171,9 @@ const SPR = {
   jetMove:["0000100","0000100","0000100","0001100","0011110","0011111","0011111","0010111","0000101","0000100","0001100","0011110","0010111","0000001"],
   ship:   ["00010000","00010000","00110000","01111000","11111111","11111110","11111100","01111100"],
   plane:  ["10000000","11000110","11111111","01001111","00111000","00110000"],
-  // side-view helicopter: thin rotor on top, rounded cockpit (left), tail boom + tail fin (right), skids
-  heli0:  ["0111111111111110","0000001100000000","0001111110000000","0011111111000000","0111111111111110","0111111111111110","0011111100011110","0001111000000110","0001001000000000","0011111000000000"],
-  heli1:  ["0000011111100000","0000001100000000","0001111110000000","0011111111000000","0111111111111110","0111111111111110","0011111100011110","0001111000000110","0001001000000000","0011111000000000"],
+  // EXACT Atari 800XL River Raid helicopter sprite (extracted from the original map), flat yellow
+  heli0:  ["0001111000","1111000000","0011000000","0111110001","1111111111","0111100001","0001000000","0111110000"],
+  heli1:  ["0001111000","1111000000","0011000000","0111110001","1111111111","0111100001","0001000000","0111110000"],
   house:  ["00111000","01111100","11111110","11111110","10101010","10101010","11111110","00000000","00000000","00000100","00000100","00000100","00001110","00001110","00011111","00011111","00001110","00000100","00000100"],
   // "FUEL" stacked vertically (red letters on the white tank) — clean, nothing clipped
   fuel:   ["11111","10000","11110","10000","10000","00000","10001","10001","10001","10001","11111","00000","11111","10000","11110","10000","11111","00000","10000","10000","10000","10000","11111"],
@@ -641,9 +641,15 @@ function pushBlock(){
     game.objs.push({type:OBJ.JET,x:Math.max(8,Math.min(FIELD_W-8,e.cx)),wy:cy+SAMPLE_H,
       w:d.w,h:d.h,dir:(b.rx&8)?1:-1,alive:true,vx:0.7});
   }
-  // a tank may be crossing the bridge -> 750-pt bonus if you blow it then (tanks never shoot)
+  // a tank may be crossing the bridge -> 750-pt bonus if you blow it then (bridge tanks don't shoot)
   if(blockCount>=4 && b.isBridge && (b.rx&3)===0){
     game.objs.push({type:OBJ.TANK,wy:bridgeWy,x:riverEdges(bridgeWy).cx,onBridge:true,w:ACT.tank.w,h:ACT.tank.h,alive:true});
+  }
+  // later stages (8+): tanks dug in on the banks that shell the river
+  if(blockCount>=4 && !b.isBridge && gen.level>=8 && (b.rx%11)===3){
+    const onB=(b.rx&8)?1:-1, e=riverEdges(cy);
+    const tx=onB<0?Math.max(3,e.left/2):Math.min(FIELD_W-3,(e.right+FIELD_W)/2);
+    game.objs.push({type:OBJ.TANK,wy:cy,x:tx,onBank:onB,w:ACT.tank.w,h:ACT.tank.h,alive:true});
   }
   // decorative maroon mountains on the green banks (the 800XL "landscape" look)
   if(blockCount>=4 && !b.isBridge && (b.rx&1)===0){
@@ -689,7 +695,8 @@ function safeSpawnX(wy){
 /* -------------------------------------------------------------- input */
 const keys={}; let tiltSteer=0, tiltThrottle=0, tiltOn=false, autoFire=false;
 addEventListener('keydown',e=>{ if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key))e.preventDefault();
-  keys[e.key]=true; if(e.key==='p'||e.key==='P')togglePause(); });
+  keys[e.key]=true; if(e.key==='p'||e.key==='P')togglePause();
+  if((e.key==='a'||e.key==='A')&&!e.repeat) setAuto(!autoFire); });   // A = toggle auto-fire (web)
 addEventListener('keyup',e=>{ keys[e.key]=false; });
 function hold(id,k){ const el=document.getElementById(id); if(!el)return;
   const on=e=>{e.preventDefault();keys[k]=true;}, off=e=>{e.preventDefault();keys[k]=false;};
@@ -825,12 +832,13 @@ function update(dt){
   // 800XL: enemies shoot back. Missiles travel HORIZONTALLY across the river
   // (and ride the scroll downward) — helicopters & land tanks only.
   g.heliTimer-=dt;
-  if(g.heliTimer<=0 && g.shownLevel>=4){              // helicopters don't shoot until stage 4
-    const shooters=g.objs.filter(o=>{ if(!o.alive||o.type!==OBJ.HELI)return false;
-      const sy=w2s(o.wy); return sy>4 && sy<JET_Y-10; });
+  if(g.heliTimer<=0 && g.shownLevel>=4){              // helicopters fire from stage 4; bank tanks from stage 8
+    const shooters=g.objs.filter(o=>{ if(!o.alive)return false;
+      const ok = (o.type===OBJ.HELI) || (o.type===OBJ.TANK && o.onBank && g.shownLevel>=8);
+      if(!ok) return false; const sy=w2s(o.wy); return sy>4 && sy<JET_Y-6; });
     if(shooters.length){
       const o=shooters[(Math.random()*shooters.length)|0];
-      const dir=(g.jetX>=o.x)?1:-1;                    // fire toward the jet's side
+      const dir=(g.jetX>=o.x)?1:-1;                    // fire toward the jet's side / into the river
       g.ebullets.push({x:o.x, wy:o.wy, vx:dir*(48+g.shownLevel*5)});  // faster missiles deeper in
       A2.heliShoot();
     }
@@ -857,13 +865,14 @@ function update(dt){
         if(o.x<mid){o.x=e.islL-m;o.dir=-1;} else {o.x=e.islR+m;o.dir=1;}
       }
       o.x=Math.max(e.left+m,Math.min(e.right-m,o.x));
-    } else if(o.type===OBJ.FUEL||o.type===OBJ.BALLOON){
-      // keep static water objects off the land and off any island
+    } else if(o.type===OBJ.FUEL){
+      // fuel depots stay put but never on an island
       const e=riverEdges(o.wy), m=o.w/2+1, mid=(e.islL+e.islR)/2;
       if(e.islL>1 && o.x+m>e.islL && o.x-m<e.islR)
         o.x = o.x<mid ? (e.left+e.islL)/2 : (e.islR+e.right)/2;
       o.x=Math.max(e.left+m, Math.min(e.right-m, o.x));
     }
+    // balloons are fully stationary obstacles — never repositioned after spawn
   }
 
   // bullet vs object
@@ -1016,7 +1025,7 @@ function render(){
       px(x0-3,y0-3,w+6,h+6,C.fuelBody);             // white tank with padding so no letter is clipped
       sprite(G.fuel,o.x,y0,C.fuelMark,false,sprScale);        // white "FUEL" markings
     } else if(o.type===OBJ.SHIP){ drawShaded(G.ship,o.x,sy-G.ship.h*sprScale,o.dir>0,'#d8d8e0',C.ship,C.shipStripe,sprScale);
-    } else if(o.type===OBJ.HELI){ drawShaded((Math.floor(g.t*12)&1)?G.heli1:G.heli0,o.x,sy-G.heli0.h*sprScale,o.dir>0,C.heliRotor,C.heli,C.heliDk,sprScale);
+    } else if(o.type===OBJ.HELI){ sprite(G.heli0,o.x,sy-G.heli0.h*sprScale,C.heli,o.dir>0,sprScale);   // flat yellow, exactly like the 800XL
     } else if(o.type===OBJ.JET){ drawShaded(G.plane,o.x,sy-G.plane.h*sprScale,o.dir>0,'#c2f06a',C.plane,'#3c8222',sprScale);
     } else if(o.type===OBJ.BALLOON){ drawActor(ACT.balloon,o.x,sy-ACT.balloon.h*sprScale,false,sprScale);
     } else if(o.type===OBJ.TANK){
@@ -1108,8 +1117,8 @@ function drawLabel(str,x,y,col,sc){ sc=sc||1; ctx.fillStyle=col; let cx=x;
 /* -------------------------------------------------------------- ui */
 const exitBtn=document.getElementById('btnExit');
 function showExit(on){ exitBtn.classList.toggle('hidden', !on);
-  if(typeof isTouch!=='undefined'&&isTouch){ autoChip.classList.toggle('hidden', !on);
-    if(dragHintEl) dragHintEl.style.opacity = on ? '0.65' : '0'; } }
+  autoChip.classList.toggle('hidden', !on);     // AUTO-fire toggle shows on web too
+  if(typeof isTouch!=='undefined'&&isTouch && dragHintEl) dragHintEl.style.opacity = on ? '0.65' : '0'; }
 function show(id){ for(const s of ['titleScreen','pauseScreen','overScreen']) document.getElementById(s).classList.add('hidden');
   if(id) document.getElementById(id).classList.remove('hidden'); }
 let paused=false;
