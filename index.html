@@ -99,11 +99,12 @@
   .tilt-tag{ position:absolute; top:8px; left:50%; transform:translateX(-50%);
     font-size:11px; color:#7ddb4a; background:rgba(0,0,0,.4); padding:2px 8px;
     border-radius:10px; z-index:6; }
-  #btnExit{ position:absolute; top:8px; right:8px; z-index:7; width:32px; height:32px;
+  #btnExit,#muteBtn,#pauseBtn{ position:absolute; z-index:7; width:32px; height:32px;
     border-radius:8px; border:1px solid rgba(150,170,255,.45); background:rgba(20,24,40,.6);
-    color:#dfe6ff; font:bold 16px/1 "Courier New",monospace; cursor:pointer; padding:0;
+    color:#dfe6ff; font:bold 15px/1 "Courier New",monospace; cursor:pointer; padding:0;
     display:flex; align-items:center; justify-content:center; }
-  #btnExit:active{ background:rgba(120,140,255,.7); }
+  #btnExit{ top:8px; right:8px; } #muteBtn{ top:8px; left:8px; } #pauseBtn{ top:46px; left:8px; }
+  #btnExit:active,#muteBtn:active,#pauseBtn:active{ background:rgba(120,140,255,.7); }
 </style>
 </head>
 <body>
@@ -119,6 +120,8 @@
     </div>
     <div id="tiltTag" class="tilt-tag hidden">TILT TO STEER</div>
     <button id="btnExit" class="hidden" aria-label="Quit to title">✕</button>
+    <button id="muteBtn" class="hidden" aria-label="Mute">🔊</button>
+    <button id="pauseBtn" class="hidden" aria-label="Pause">⏸</button>
 
     <div id="titleScreen" class="screen" style="padding-bottom:48px">
       <div class="logo"><span>ACTIVISION STYLE</span><b>RIVER RAID</b></div>
@@ -150,6 +153,12 @@
       <div class="score-line" id="bestScore">BEST 0</div>
       <button class="btn" id="continueBtn">CONTINUE</button>
       <button class="btn" id="againBtn">PLAY AGAIN</button>
+    </div>
+
+    <div id="howtoScreen" class="screen hidden">
+      <div class="logo"><b style="font-size:clamp(20px,5.5vw,36px)">HOW TO PLAY</b></div>
+      <div class="sub" id="howtoBody"></div>
+      <button class="btn" id="howtoBtn">GOT IT — PLAY</button>
     </div>
   </div>
 </div>
@@ -609,7 +618,7 @@ function newGame(startSec){
     dist:worldStart, speed:1.0, baseV:Math.min(70,32+startSec*1.3),
     blocks:[], worldTop:worldStart,
     jetX:CENTER, jetDir:0,
-    bullets:[], explosions:[], objs:[],
+    bullets:[], explosions:[], objs:[], pops:[],
     fireCool:0, invuln:1.5, deadTimer:0, lowBeep:0, t:0,
     shownLevel:startSec+1, banner:startSec>0?1.6:0, checkpoints:[{wy:worldStart,snap:initSnap,sec:startSec}],
     waiting:false, heliTimer:1.2, ebullets:[] };
@@ -895,7 +904,7 @@ function update(dt){
       const sy=w2s(o.wy); let ox,ow,oh;
       if(o.type===OBJ.BRIDGE){const e=riverEdges(o.wy);ox=e.cx;ow=e.right-e.left;oh=8;} else {ox=o.x;ow=o.w+8;oh=o.h+4;}
       if(Math.abs(b.x-ox)<ow/2 && b.sy>sy-oh-3 && b.sy<sy+5){
-        o.alive=false; b.sy=-99; addScore(SCORE[o.type]||0);
+        o.alive=false; b.sy=-99; const pts=SCORE[o.type]||0; addScore(pts); scorePop(ox,sy-oh,pts);
         if(o.type===OBJ.BRIDGE){ boom(ox,sy,true); A2.explosion(true); buzz([0,30,30,60]); }  // fire effect only for bridges
         else { buzz(18); }                          // other enemies: just a vibrate, no fire effect
         if(o.type===OBJ.BRIDGE){           // bonus if a tank is crossing the bridge (750 total)
@@ -933,6 +942,8 @@ function update(dt){
   else g.refuelBeepT=0;
   for(const ex of g.explosions) ex.t+=dt;
   g.explosions=g.explosions.filter(ex=>ex.t<ex.life);
+  for(const p of g.pops){ p.t+=dt; p.sy-=22*dt; }     // score pops rise & fade
+  g.pops=g.pops.filter(p=>p.t<0.6);
 }
 function updateDead(dt){ for(const ex of game.explosions)ex.t+=dt; game.deadTimer-=dt;
   if(game.deadTimer<=0){ if(game.lives<=0)endGame(); else respawn(); } }
@@ -942,6 +953,7 @@ function addScore(p){ game.score+=p; if(game.score>=game.nextLife){game.lives++;
 let haptics=true; function buzz(p){ if(haptics&&navigator.vibrate){ try{ navigator.vibrate(p); }catch(e){} } }
 let shake=0;                                 // screen-shake amount (seconds), decays in render
 function boom(x,y,big){ game.explosions.push({x,y,t:0,life:big?0.6:0.42,big}); shake=Math.max(shake, big?0.55:0.3); }
+function scorePop(x,sy,n){ if(n>0) game.pops.push({x,sy,n,t:0}); }   // brief "+N" rising score at a kill
 function killJet(){ if(game.state!=='play')return; A2.explosion(false); boom(game.jetX,JET_Y,false);
   shake=Math.max(shake,0.6); buzz([0,45,40,90]);          // crash = biggest shake + double buzz
   game.lives--; game.state='dead'; game.deadTimer=1.1; }
@@ -1079,6 +1091,11 @@ function render(){
       px(ex.x+Math.cos(an)*rad-1,ex.y+Math.sin(an)*rad-1,2,2,C.explo[ci]); }
     px(ex.x-1,ex.y-1,2,2,C.explo[Math.max(0,ci-1)]);
   }
+  // rising "+score" pops (kill feedback, esp. on desktop where there's no vibration)
+  for(const p of g.pops){ if(p.t>0.5)continue; const s=String(p.n), wpx=s.length*4-1;
+    let cx=p.x-wpx/2; ctx.fillStyle='#ffe14d'; px(cx+1,p.sy-1,1,1,'#3a2a00');   // tiny shadow
+    for(const ch of s){ const gd=GD[+ch]; ctx.fillStyle='#ffe14d';
+      for(const q of gd.pts) ctx.fillRect(cx+q[0],p.sy+q[1],1,1); cx+=(gd.w+1); } }
 
   // "LEVEL n" banner each time you clear a bridge
   if(g.banner>0 && g.state==='play'){
@@ -1122,7 +1139,7 @@ function drawHUD(){
   const gx=16, gy=y0+30, gw=156, gh=8;
   px(gx-2,gy-2,gw+4,gh+4,C.hudText);                    // frame
   px(gx,gy,gw,gh,'#181818');
-  const fc=g.fuel<0.25?C.fuelLow:g.fuel<0.5?C.fuelWarn:C.fuelGood;
+  const fc = g.fuel<0.25 ? ((Math.floor(g.t*6)&1)?C.fuelLow:'#ff9a9a') : (g.fuel<0.5?C.fuelWarn:C.fuelGood);  // pulse when low
   px(gx,gy,Math.round(gw*g.fuel),gh,fc);
   px(gx+(gw>>1),gy,1,gh,'#888');                        // ½ tick
   drawLabel('E',gx-9,gy+2,C.hudText,1); drawLabel('F',gx+gw+4,gy+2,C.hudText,1);
@@ -1141,27 +1158,41 @@ function drawLabel(str,x,y,col,sc){ sc=sc||1; ctx.fillStyle=col; let cx=x;
 
 /* -------------------------------------------------------------- ui */
 const exitBtn=document.getElementById('btnExit');
+const muteBtn=document.getElementById('muteBtn'), pauseBtn=document.getElementById('pauseBtn');
 function showExit(on){ exitBtn.classList.toggle('hidden', !on);
   autoChip.classList.toggle('hidden', !on);     // AUTO-fire toggle shows on web too
+  muteBtn.classList.toggle('hidden', !on); pauseBtn.classList.toggle('hidden', !on);
   if(typeof isTouch!=='undefined'&&isTouch && dragHintEl) dragHintEl.style.opacity = on ? '0.65' : '0'; }
-function show(id){ for(const s of ['titleScreen','pauseScreen','overScreen']) document.getElementById(s).classList.add('hidden');
+muteBtn.textContent = muted?'🔇':'🔊';
+muteBtn.addEventListener('click',e=>{ e.preventDefault(); setMute(!muted); });
+pauseBtn.addEventListener('click',e=>{ e.preventDefault(); togglePause(); });
+function show(id){ for(const s of ['titleScreen','pauseScreen','overScreen','howtoScreen']) document.getElementById(s).classList.add('hidden');
   if(id) document.getElementById(id).classList.remove('hidden'); }
 let paused=false;
 function togglePause(){ if(!game||game.state!=='play'&&!paused)return;
-  paused=!paused; if(paused){ show('pauseScreen'); A2.stopEngine(); } else { show(null); A2.startEngine(); } }
+  paused=!paused; pauseBtn.textContent = paused?'▶':'⏸';
+  if(paused){ show('pauseScreen'); A2.stopEngine(); } else { show(null); A2.startEngine(); } }
 // quit the current round back to the title screen (visible ✕, works without a keyboard)
 function exitToTitle(){ if(!game)return; paused=false; A2.stopEngine(); game.state='title';
   showExit(false); document.getElementById('tiltTag').classList.add('hidden'); show('titleScreen'); }
 exitBtn.addEventListener('click', exitToTitle);
 function goFullscreen(){ const el=document.documentElement;
   const fn=el.requestFullscreen||el.webkitRequestFullscreen; if(fn){ try{ fn.call(el); }catch(e){} } }
+let pendingSec=0;
 function startGame(sec){ sec=(typeof sec==='number')?sec:0; A2.init(); A2.resume(); A2.mute(muted);
   recalibrateTilt();                                   // neutral = how you're holding it now
   if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function')
     DeviceOrientationEvent.requestPermission().then(p=>{if(p==='granted')enableTilt();}).catch(()=>{});
   else enableTilt();
   if(isTouch){ document.getElementById('tiltTag').classList.remove('hidden'); goFullscreen(); }
-  show(null); showExit(true); A2.startEngine(); newGame(sec); paused=false; }
+  let seen=false; try{ seen=localStorage.getItem('rr_seen')==='1'; }catch(e){}
+  if(!seen){ pendingSec=sec; document.getElementById('howtoBody').innerHTML = isTouch
+      ? 'Drag anywhere to <b>steer</b> · drag <b>up/down</b> to set speed.<br>Tap <b>FIRE</b> (or turn on <b>AUTO</b>) to shoot.<br>Fly over <b>fuel</b> depots to refuel — don’t shoot them.<br>Destroy <b>bridges</b> to reach the next stage.'
+      : '<b>◀ ▶</b> steer · <b>▲</b> speed up · <b>▼</b> slow · <b>Space</b> fire · <b>A</b> auto-fire · <b>M</b> mute · <b>P</b> pause.<br>Fly over <b>fuel</b> depots to refuel — don’t shoot them. Destroy <b>bridges</b> to advance.';
+    show('howtoScreen'); return; }
+  beginGame(sec); }
+function beginGame(sec){ show(null); showExit(true); A2.startEngine(); newGame(sec); paused=false; }
+document.getElementById('howtoBtn').addEventListener('click',()=>{ try{localStorage.setItem('rr_seen','1');}catch(e){} beginGame(pendingSec); });
 // title-screen bridge select (start at any bridge, like the 800XL cartridge)
 const MAX_BRIDGE=99;                         // difficulty caps at 48; geometry loops beyond
 let startBridge=1;
