@@ -1267,15 +1267,17 @@ function togglePause(){ if(!game||game.state!=='play'&&!paused)return;
 function exitToTitle(){ if(!game)return; paused=false; A2.stopEngine(); game.state='title';
   showExit(false); document.getElementById('tiltTag').classList.add('hidden'); show('titleScreen'); }
 exitBtn.addEventListener('click', exitToTitle);
-function goFullscreen(){ const el=document.documentElement;
-  const fn=el.requestFullscreen||el.webkitRequestFullscreen; if(fn){ try{ fn.call(el); }catch(e){} } }
+// NOTE: we deliberately do NOT auto-request the Fullscreen API on mobile — it makes
+// the browser show a full-width "you are now in full screen / swipe to exit" interstitial
+// on the first start, which is jarring. The responsive layout already fills the screen,
+// and an installed PWA (display:standalone) hides the browser chrome on its own.
 let pendingSec=0;
 function startGame(sec){ sec=(typeof sec==='number')?sec:0; A2.init(); A2.resume(); A2.mute(muted);
   recalibrateTilt();                                   // neutral = how you're holding it now
   if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function')
     DeviceOrientationEvent.requestPermission().then(p=>{if(p==='granted')enableTilt();}).catch(()=>{});
   else enableTilt();
-  if(isTouch){ document.getElementById('tiltTag').classList.remove('hidden'); goFullscreen(); }
+  if(isTouch){ document.getElementById('tiltTag').classList.remove('hidden'); }
   let seen=false; try{ seen=localStorage.getItem('rr_seen')==='1'; }catch(e){}
   if(!seen){ pendingSec=sec; document.getElementById('howtoBody').innerHTML = isTouch
       ? 'Drag anywhere to <b>steer</b> · drag <b>up/down</b> to set speed.<br>Tap <b>FIRE</b> (or turn on <b>AUTO</b>) to shoot.<br>Fly over <b>fuel</b> depots to refuel — don’t shoot them.<br>Destroy <b>bridges</b> to reach the next stage.'

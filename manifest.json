@@ -4,7 +4,7 @@
   "description": "A faithful single-file HTML5 remake of the classic Atari 800XL river shooter.",
   "start_url": "./index.html",
   "scope": "./",
-  "display": "fullscreen",
+  "display": "standalone",
   "orientation": "portrait",
   "background_color": "#000000",
   "theme_color": "#0a0e1a",
