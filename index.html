@@ -105,6 +105,28 @@
     display:flex; align-items:center; justify-content:center; }
   #btnExit{ top:8px; right:8px; } #muteBtn{ top:8px; left:8px; } #pauseBtn{ top:46px; left:8px; }
   #btnExit:active,#muteBtn:active,#pauseBtn:active{ background:rgba(120,140,255,.7); }
+
+  /* --- Hall of Fame --- */
+  .btn.gold{ background:#e2b53a; box-shadow:0 4px 0 #8a6512; }
+  .btn.gold:active{ box-shadow:0 1px 0 #8a6512; }
+  #hofList{ width:min(92vw,420px); max-height:46vh; overflow-y:auto;
+    background:rgba(10,14,28,.6); border:1px solid rgba(150,170,255,.28);
+    border-radius:10px; padding:6px; }
+  .hofrow{ display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:6px;
+    font-size:clamp(13px,3.2vw,17px); letter-spacing:.5px; }
+  .hofrow:nth-child(odd){ background:rgba(255,255,255,.04); }
+  .hofrow .rk{ width:1.8em; text-align:right; color:#9aa6c8; font-weight:bold; }
+  .hofrow .nm{ flex:1; text-align:left; color:#dfe6ff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hofrow .sc{ color:#ffe14d; font-weight:bold; font-variant-numeric:tabular-nums; }
+  .hofrow.top .rk{ color:#e2b53a; }
+  .hofrow.me{ background:rgba(226,181,58,.18); outline:1px solid rgba(226,181,58,.6); }
+  #hofStatus{ font-size:clamp(10px,2.4vw,13px); color:#9aa6c8; }
+  #nameEntry{ display:flex; flex-direction:column; align-items:center; gap:10px; }
+  #nameInput{ font-family:inherit; font-weight:bold; text-align:center; letter-spacing:2px;
+    font-size:clamp(15px,3.6vw,20px); color:#fff; background:rgba(10,14,28,.85);
+    border:2px solid #e2b53a; border-radius:8px; padding:9px 12px; width:min(70vw,260px);
+    text-transform:uppercase; outline:none; }
+  #nameInput::placeholder{ color:#7d86a6; letter-spacing:1px; }
 </style>
 </head>
 <body>
@@ -138,6 +160,7 @@
         <button class="arw" id="brUp">+</button>
       </div>
       <button class="btn" id="startBtn">START GAME</button>
+      <button class="btn gold" id="hofBtnTitle">HALL OF FAME</button>
       <div class="keys" id="tiltHint"></div>
       <div id="ticker"><div class="track" id="tickerTrack"></div></div>
     </div>
@@ -151,9 +174,23 @@
       <div class="big">GAME OVER</div>
       <div class="score-line" id="finalScore">SCORE 0</div>
       <div class="score-line" id="bestScore">BEST 0</div>
+      <div id="nameEntry" class="hidden">
+        <div class="score-line" style="color:#e2b53a;font-weight:bold">★ NEW HIGH SCORE ★</div>
+        <input id="nameInput" maxlength="12" placeholder="YOUR NAME" autocomplete="off"
+               autocapitalize="characters" spellcheck="false" aria-label="Your name">
+        <button class="btn gold" id="saveScoreBtn">SAVE TO HALL OF FAME</button>
+      </div>
       <button class="btn" id="continueBtn">CONTINUE</button>
       <button class="btn" id="againBtn">PLAY AGAIN</button>
+      <button class="btn gold" id="hofBtnOver">HALL OF FAME</button>
       <button class="btn" id="homeBtn" style="background:#5b6b86;box-shadow:0 4px 0 #2e3950">HOME</button>
+    </div>
+
+    <div id="hofScreen" class="screen hidden">
+      <div class="logo"><span>WORLDWIDE</span><b style="font-size:clamp(20px,5.5vw,38px);color:#e2b53a;text-shadow:2px 2px 0 #6a4a08">HALL OF FAME</b></div>
+      <div id="hofStatus"></div>
+      <div id="hofList"></div>
+      <button class="btn" id="hofBackBtn">BACK</button>
     </div>
 
     <div id="howtoScreen" class="screen hidden">
@@ -984,8 +1021,60 @@ function endGame(){ game.state='over'; A2.stopEngine(); showExit(false);
   const cb=document.getElementById('continueBtn');
   if(lastStageSec>0){ cb.textContent='CONTINUE → STAGE '+(lastStageSec+1); cb.classList.remove('hidden'); }
   else cb.classList.add('hidden');
+  const ne=document.getElementById('nameEntry');
+  if(LB.qualifies(game.score)){ ne.classList.remove('hidden');
+    const inp=document.getElementById('nameInput'); try{ inp.value=localStorage.getItem('rr_name')||''; }catch(e){}
+    const sb=document.getElementById('saveScoreBtn'); sb.disabled=false; sb.textContent='SAVE TO HALL OF FAME';
+  } else ne.classList.add('hidden');
   show('overScreen'); }
 let best=0; try{ best=(+localStorage.getItem('rr_best'))||0; }catch(e){}   // persisted high score
+
+/* ---- Hall of Fame: global leaderboard (Cloudflare Worker) with local fallback ----
+   Paste your deployed Worker URL below (no trailing slash). Until it's set, scores
+   are kept locally in this browser so the feature still works. See leaderboard/README.md. */
+const LB_URL = '';   // e.g. 'https://river-raid-scores.yoursubdomain.workers.dev'
+const LB = (function(){
+  function local(){ try{ return JSON.parse(localStorage.getItem('rr_scores')||'[]'); }catch(e){ return []; } }
+  function saveLocal(a){ try{ localStorage.setItem('rr_scores', JSON.stringify(a.slice(0,25))); }catch(e){} }
+  function addLocal(name,score){ const a=local(); a.push({name,score,ts:Date.now()});
+    a.sort((x,y)=>y.score-x.score); saveLocal(a); return a; }
+  function qualifies(score){ if(!(score>0)) return false; const a=local();
+    return a.length<25 || score>a[a.length-1].score; }
+  async function fetchTop(){
+    if(LB_URL){ try{
+      const r=await fetch(LB_URL+'/scores',{cache:'no-store'});
+      if(r.ok){ const j=await r.json(); const s=(j&&j.scores)||(Array.isArray(j)?j:[]);
+        return {scores:s, global:true}; }
+    }catch(e){} }
+    return {scores:local(), global:false};
+  }
+  async function submit(name,score){ addLocal(name,score);   // always keep a local copy
+    if(!LB_URL) return false;
+    try{ const r=await fetch(LB_URL+'/scores',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({name,score}) });
+      return r.ok; }catch(e){ return false; }
+  }
+  return {qualifies, fetchTop, submit};
+})();
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+let hofOrigin='title';
+async function openHof(origin, hl){
+  hofOrigin = origin||'title';
+  show('hofScreen');
+  const list=document.getElementById('hofList'), status=document.getElementById('hofStatus');
+  status.textContent=''; list.innerHTML='<div style="opacity:.7;padding:14px">Loading…</div>';
+  const {scores, global} = await LB.fetchTop();
+  status.textContent = global ? 'Top players worldwide'
+    : (LB_URL ? 'Leaderboard offline — showing your local scores' : 'Your local scores (this device)');
+  const top = (scores||[]).slice(0,10);
+  if(!top.length){ list.innerHTML='<div style="opacity:.7;padding:14px">No scores yet — be the first!</div>'; return; }
+  list.innerHTML = top.map((s,i)=>{
+    const me = hl && s.name===hl.name && (s.score|0)===(hl.score|0);
+    return `<div class="hofrow${i<3?' top':''}${me?' me':''}">`+
+      `<span class="rk">${i+1}</span><span class="nm">${esc(s.name||'YOU')}</span>`+
+      `<span class="sc">${(s.score|0).toLocaleString()}</span></div>`;
+  }).join('');
+}
 
 /* -------------------------------------------------------------- render */
 function px(x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(x|0,y|0,w,h); }
@@ -1168,7 +1257,7 @@ function showExit(on){ exitBtn.classList.toggle('hidden', !on);
 muteBtn.textContent = muted?'🔇':'🔊';
 muteBtn.addEventListener('click',e=>{ e.preventDefault(); setMute(!muted); });
 pauseBtn.addEventListener('click',e=>{ e.preventDefault(); togglePause(); });
-function show(id){ for(const s of ['titleScreen','pauseScreen','overScreen','howtoScreen']) document.getElementById(s).classList.add('hidden');
+function show(id){ for(const s of ['titleScreen','pauseScreen','overScreen','howtoScreen','hofScreen']) document.getElementById(s).classList.add('hidden');
   if(id) document.getElementById(id).classList.remove('hidden'); }
 let paused=false;
 function togglePause(){ if(!game||game.state!=='play'&&!paused)return;
@@ -1213,6 +1302,19 @@ document.getElementById('continueBtn').addEventListener('click',()=>startGame(la
 document.getElementById('homeBtn').addEventListener('click',()=>{ A2.stopEngine(); showExit(false);
   document.getElementById('tiltTag').classList.add('hidden'); show('titleScreen'); });   // back to title from game over
 document.getElementById('resumeBtn').addEventListener('click',togglePause);
+// Hall of Fame wiring
+document.getElementById('hofBtnTitle').addEventListener('click',()=>openHof('title'));
+document.getElementById('hofBtnOver').addEventListener('click',()=>openHof('over'));
+document.getElementById('hofBackBtn').addEventListener('click',()=>show(hofOrigin==='over'?'overScreen':'titleScreen'));
+document.getElementById('saveScoreBtn').addEventListener('click',async ()=>{
+  const inp=document.getElementById('nameInput');
+  const nm=((inp.value||'').replace(/[^A-Za-z0-9 ._-]/g,'').trim().slice(0,12))||'YOU';
+  try{ localStorage.setItem('rr_name',nm); }catch(e){}
+  const sb=document.getElementById('saveScoreBtn'); sb.disabled=true; sb.textContent='SAVING…';
+  await LB.submit(nm, game.score);
+  document.getElementById('nameEntry').classList.add('hidden');
+  openHof('over', {name:nm, score:game.score});
+});
 
 const isTouch=('ontouchstart'in window)||navigator.maxTouchPoints>0;
 if(isTouch){ document.getElementById('touch').classList.remove('hidden');
