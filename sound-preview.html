@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>River Raid — POKEY Soundscape Preview</title>
+<style>
+  :root{ color-scheme:dark; }
+  body{ margin:0; font-family:"Courier New",monospace; background:#0a0e1a; color:#dfe6ff;
+    min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:12px; padding:22px 16px 48px; }
+  h1{ font-size:19px; color:#7ddb4a; letter-spacing:1.5px; margin:4px 0 0; text-align:center; }
+  p.note{ color:#9aa6c8; font-size:13px; max-width:36em; text-align:center; line-height:1.5; margin:0 0 4px; }
+  .card{ width:min(94vw,460px); background:#121a30; border:1px solid #2a375c; border-radius:12px;
+    padding:12px 14px; }
+  .card h2{ font-size:15px; margin:0 0 2px; color:#ffe14d; }
+  .card small{ display:block; color:#9aa6c8; font-size:12px; line-height:1.4; margin-bottom:9px; }
+  .row{ display:flex; flex-wrap:wrap; gap:8px; }
+  button{ font-family:inherit; font-weight:bold; font-size:14px; color:#001; background:#7ddb4a;
+    border:none; border-radius:9px; padding:11px 16px; cursor:pointer; box-shadow:0 3px 0 #3a7d18; }
+  button:active{ transform:translateY(2px); box-shadow:0 1px 0 #3a7d18; }
+  button.alt{ background:#e2b53a; box-shadow:0 3px 0 #8a6512; } button.alt:active{ box-shadow:0 1px 0 #8a6512; }
+  button.stop{ background:#c0496b; box-shadow:0 3px 0 #7a2540; color:#fff; } button.stop:active{ box-shadow:0 1px 0 #7a2540; }
+  .pick{ margin-top:8px; color:#7ddb4a; font-size:13px; text-align:center; max-width:34em; line-height:1.55; }
+</style>
+</head>
+<body>
+  <h1>RIVER RAID — POKEY SOUNDSCAPE PREVIEW</h1>
+  <p class="note">Faithful WebAudio re-creations of the six original 800XL sounds. Volume up. Tell me which shot you want and whether the rest feel right.</p>
+
+  <div class="card">
+    <h2>1 · Jet engine hum</h2>
+    <small>Continuous low white-noise rumble; pitch/level steps with speed.</small>
+    <div class="row">
+      <button onclick="engine('idle')">IDLE</button>
+      <button onclick="engine('cruise')">CRUISE</button>
+      <button onclick="engine('accel')">ACCELERATE</button>
+      <button class="stop" onclick="engineStop()">STOP</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2 · Cannon / laser fire</h2>
+    <small>Pick one. “Paw” = your warm low choice (F). “Pew” = the catalog’s sharp downward slide.</small>
+    <div class="row">
+      <button onclick="firePaw()">PAW (F)</button>
+      <button onclick="rapid(firePaw)">PAW ×5</button>
+      <button class="alt" onclick="firePew()">PEW</button>
+      <button class="alt" onclick="rapid(firePew)">PEW ×5</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3 · Standard explosion</h2>
+    <small>Brief burst of dirty white noise + heavy bass (enemy / fuel-depot hit).</small>
+    <div class="row"><button onclick="boom(false)">PLAY</button></div>
+  </div>
+
+  <div class="card">
+    <h2>4 · Bridge demolition</h2>
+    <small>Longer, deeper, more violent — the section-clear milestone.</small>
+    <div class="row"><button onclick="boom(true)">PLAY</button></div>
+  </div>
+
+  <div class="card">
+    <h2>5 · Fueling-up chime</h2>
+    <small>Rapid ascending repeating beep-beep-beep while over a depot.</small>
+    <div class="row">
+      <button onclick="refuel()">ONE PASS</button>
+      <button onclick="refuelHold()">HOLD (3×)</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>6 · Player crash / game over</h2>
+    <small>Explosion cuts the engine, then a descending dissolving groan.</small>
+    <div class="row"><button onclick="crash()">PLAY</button></div>
+  </div>
+
+  <p class="pick">Reply e.g. “shot = pew, rest good”, or “bridge deeper / refuel faster / engine grittier”. I’ll wire your picks into the game and redeploy.</p>
+
+<script>
+"use strict";
+let ctx, master;
+function ac(){ if(!ctx){ ctx=new (window.AudioContext||window.webkitAudioContext)(); master=ctx.createGain(); master.gain.value=0.5; master.connect(ctx.destination); }
+  if(ctx.state==='suspended')ctx.resume(); return ctx; }
+function noiseBuf(d){ const c=ac(); const n=Math.floor(c.sampleRate*d); const b=c.createBuffer(1,n,c.sampleRate);
+  const ch=b.getChannelData(0); for(let i=0;i<n;i++) ch[i]=Math.random()*2-1; return b; }
+
+/* 1 — ENGINE: looping white noise through a lowpass (cutoff+level step with speed) + a low body tone */
+let eng=null;
+function engineStart(){ const c=ac(); if(eng) return;
+  const src=c.createBufferSource(); src.buffer=noiseBuf(1.2); src.loop=true;
+  const lp=c.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=320; lp.Q.value=1.2;
+  const ng=c.createGain(); ng.gain.value=0.0;
+  const osc=c.createOscillator(); osc.type='sawtooth'; osc.frequency.value=58;
+  const og=c.createGain(); og.gain.value=0.0;
+  src.connect(lp); lp.connect(ng); ng.connect(master); osc.connect(og); og.connect(master);
+  src.start(); osc.start();
+  eng={src,lp,ng,osc,og};
+}
+function engine(mode){ const c=ac(); engineStart(); const t=c.currentTime;
+  const p = mode==='idle' ? {cut:300,tone:52,n:0.16,o:0.05}
+          : mode==='cruise'? {cut:560,tone:90,n:0.22,o:0.06}
+          :                  {cut:1000,tone:135,n:0.30,o:0.08};
+  eng.lp.frequency.setTargetAtTime(p.cut,t,0.12);
+  eng.osc.frequency.setTargetAtTime(p.tone,t,0.12);
+  eng.ng.gain.setTargetAtTime(p.n,t,0.12);
+  eng.og.gain.setTargetAtTime(p.o,t,0.12);
+}
+function engineStop(){ if(!eng)return; const c=ac(),t=c.currentTime;
+  eng.ng.gain.setTargetAtTime(0,t,0.1); eng.og.gain.setTargetAtTime(0,t,0.1);
+  const e=eng; eng=null; setTimeout(()=>{ try{e.src.stop();e.osc.stop();}catch(_){} },600); }
+
+/* 2 — FIRE */
+function firePaw(t0){ const c=ac(),t=t0||c.currentTime; const o=c.createOscillator(); o.type='square';
+  o.frequency.setValueAtTime(300,t); o.frequency.exponentialRampToValueAtTime(200,t+0.096);
+  const lp=c.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=760; lp.Q.value=0.8;
+  const g=c.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.3,t+0.006); g.gain.exponentialRampToValueAtTime(0.0008,t+0.12);
+  o.connect(lp); lp.connect(g); g.connect(master); o.start(t); o.stop(t+0.14); }
+function firePew(t0){ const c=ac(),t=t0||c.currentTime; const o=c.createOscillator(),o2=c.createOscillator(); o.type=o2.type='square';
+  o.frequency.setValueAtTime(1400,t); o.frequency.exponentialRampToValueAtTime(180,t+0.10);
+  o2.frequency.setValueAtTime(1410,t); o2.frequency.exponentialRampToValueAtTime(176,t+0.10);  // detune = POKEY grit
+  const lp=c.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=3200;
+  const g=c.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.22,t+0.004); g.gain.exponentialRampToValueAtTime(0.0008,t+0.12);
+  o.connect(lp); o2.connect(lp); lp.connect(g); g.connect(master); o.start(t); o2.start(t); o.stop(t+0.13); o2.stop(t+0.13); }
+function rapid(fn){ const c=ac(); for(let i=0;i<5;i++) fn(c.currentTime+i*0.16); }
+
+/* 3 & 4 — EXPLOSIONS: dirty noise + heavy bass; bridge is longer/deeper/louder */
+function boom(big){ const c=ac(),t=c.currentTime, d=big?0.95:0.45;
+  const s=c.createBufferSource(); s.buffer=noiseBuf(d);
+  const lp=c.createBiquadFilter(); lp.type='lowpass';
+  lp.frequency.setValueAtTime(big?2400:1700,t); lp.frequency.exponentialRampToValueAtTime(70,t+d);
+  const g=c.createGain(); g.gain.setValueAtTime(big?0.6:0.42,t); g.gain.exponentialRampToValueAtTime(0.001,t+d);
+  const o=c.createOscillator(); o.type='triangle'; o.frequency.setValueAtTime(big?130:185,t); o.frequency.exponentialRampToValueAtTime(big?30:45,t+d);
+  const og=c.createGain(); og.gain.setValueAtTime(big?0.4:0.24,t); og.gain.exponentialRampToValueAtTime(0.001,t+d);
+  // a second gritty noise layer for the bridge to make it "more violent"
+  s.connect(lp); lp.connect(g); g.connect(master); o.connect(og); og.connect(master);
+  s.start(t); s.stop(t+d); o.start(t); o.stop(t+d);
+  if(big){ const s2=c.createBufferSource(); s2.buffer=noiseBuf(d); const bp=c.createBiquadFilter(); bp.type='bandpass'; bp.frequency.setValueAtTime(800,t); bp.frequency.exponentialRampToValueAtTime(120,t+d); bp.Q.value=0.7;
+    const g2=c.createGain(); g2.gain.setValueAtTime(0.32,t); g2.gain.exponentialRampToValueAtTime(0.001,t+d);
+    s2.connect(bp); bp.connect(g2); g2.connect(master); s2.start(t); s2.stop(t+d); } }
+
+/* 5 — REFUEL: a quick ascending 4-beep purr; HOLD repeats it */
+function refuelOnce(t0){ const c=ac(),t=t0||c.currentTime; const steps=[523,659,784,1047];
+  steps.forEach((f,i)=>{ const o=c.createOscillator(); o.type='square'; o.frequency.setValueAtTime(f,t+i*0.05);
+    const g=c.createGain(); g.gain.setValueAtTime(0.0001,t+i*0.05); g.gain.linearRampToValueAtTime(0.16,t+i*0.05+0.004); g.gain.exponentialRampToValueAtTime(0.0006,t+i*0.05+0.045);
+    o.connect(g); g.connect(master); o.start(t+i*0.05); o.stop(t+i*0.05+0.05); }); }
+function refuel(){ refuelOnce(); }
+function refuelHold(){ const c=ac(); for(let i=0;i<3;i++) refuelOnce(c.currentTime+i*0.22); }
+
+/* 6 — CRASH: explosion that cuts the engine + descending dissolving groan */
+function crash(){ const c=ac(),t=c.currentTime; engineStop();
+  boom(false);
+  const o=c.createOscillator(); o.type='sawtooth'; o.frequency.setValueAtTime(420,t+0.05); o.frequency.exponentialRampToValueAtTime(38,t+1.1);
+  const lp=c.createBiquadFilter(); lp.type='lowpass'; lp.frequency.setValueAtTime(1800,t); lp.frequency.exponentialRampToValueAtTime(120,t+1.1);
+  const g=c.createGain(); g.gain.setValueAtTime(0.0001,t+0.05); g.gain.linearRampToValueAtTime(0.26,t+0.12); g.gain.exponentialRampToValueAtTime(0.0006,t+1.15);
+  o.connect(lp); lp.connect(g); g.connect(master); o.start(t+0.05); o.stop(t+1.2); }
+</script>
+</body>
+</html>

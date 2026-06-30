@@ -575,7 +575,7 @@ const A2=(()=>{
   // POKEY-style synthesis: the engine is a buzzy detuned motor, effects are
   // built from the TIA/POKEY-flavoured noise + square channels.
   let ctx=null,master=null,started=false;
-  let e1,e2,eNoiseSrc,eNoiseGain,eF,eGain,wob,wobGain;
+  let eNoiseSrc,eLP,eNoiseGain,eOsc,eOscGain;
   function init(){ if(ctx)return; const AC=window.AudioContext||window.webkitAudioContext; ctx=new AC();
     master=ctx.createGain(); master.gain.value=0.45; master.connect(ctx.destination); }
   function resume(){ if(ctx&&ctx.state==='suspended') ctx.resume(); }
@@ -584,64 +584,86 @@ const A2=(()=>{
   function loopNoise(){ const b=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate), x=b.getChannelData(0);
     for(let i=0;i<x.length;i++)x[i]=Math.random()*2-1; return b; }
   function startEngine(){ if(!ctx||started)return;
-    // Atari "plane taking off" roar: rushing filtered noise + a rising turbine whine.
-    // The roar brightens and swells smoothly as you accelerate.
+    // POKEY-style engine: a low white-noise rumble (lowpass cutoff steps with speed)
+    // plus a low saw body. Audible deep idle; brightens + swells as you accelerate.
     eNoiseSrc=ctx.createBufferSource(); eNoiseSrc.buffer=loopNoise(); eNoiseSrc.loop=true;
-    eF=ctx.createBiquadFilter(); eF.type='bandpass'; eF.frequency.value=520; eF.Q.value=0.9;
-    eNoiseGain=ctx.createGain(); eNoiseGain.gain.value=1.0;                  // air-roar mix
-    e1=ctx.createOscillator(); e1.type='sawtooth'; e1.frequency.value=120;   // turbine whine
-    wobGain=ctx.createGain(); wobGain.gain.value=0.10;                       // whine mix (subtle)
-    eGain=ctx.createGain(); eGain.gain.value=0;                              // master swell (silent at idle)
-    eNoiseSrc.connect(eF); eF.connect(eNoiseGain); eNoiseGain.connect(eGain);
-    e1.connect(wobGain); wobGain.connect(eGain);
-    eGain.connect(master);
-    eNoiseSrc.start(); e1.start(); started=true; }
-  function stopEngine(){ if(!started)return; try{eNoiseSrc.stop();e1.stop();}catch(e){} started=false; }
+    eLP=ctx.createBiquadFilter(); eLP.type='lowpass'; eLP.frequency.value=300; eLP.Q.value=1.2;
+    eNoiseGain=ctx.createGain(); eNoiseGain.gain.value=0.16;                 // deep idle rumble level
+    eOsc=ctx.createOscillator(); eOsc.type='sawtooth'; eOsc.frequency.value=52;
+    eOscGain=ctx.createGain(); eOscGain.gain.value=0.05;
+    eNoiseSrc.connect(eLP); eLP.connect(eNoiseGain); eNoiseGain.connect(master);
+    eOsc.connect(eOscGain); eOscGain.connect(master);
+    eNoiseSrc.start(); eOsc.start(); started=true; }
+  function stopEngine(){ if(!started)return; try{eNoiseSrc.stop();eOsc.stop();}catch(e){} started=false; }
   function setThrust(on,s){ if(!started)return; const t=ctx.currentTime;
-    if(!on){ eGain.gain.setTargetAtTime(0,t,0.20); return; }                 // spool down when coasting
-    // taking off: roar gets brighter + turbine whine rises + volume swells with throttle
-    eF.frequency.setTargetAtTime(480+s*2200,t,0.15);
-    e1.frequency.setTargetAtTime(110+s*260,t,0.15);
-    eGain.gain.setTargetAtTime(0.045+s*0.05,t,0.12); }
+    // always a deep idle rumble; accelerating steps the cutoff, pitch and level up
+    const k = on ? Math.max(0,Math.min(1,s)) : 0;
+    eLP.frequency.setTargetAtTime(300+k*700,t,0.12);
+    eOsc.frequency.setTargetAtTime(52+k*83,t,0.12);
+    eNoiseGain.gain.setTargetAtTime(0.16+k*0.14,t,0.12);
+    eOscGain.gain.setTargetAtTime(0.05+k*0.03,t,0.12); }
   function fire(){ if(!ctx)return; const t=ctx.currentTime;
-    // soft, low "paw" — a square through a low lowpass, gentle attack + rounded tail (classic TIA-style shot)
-    const o=ctx.createOscillator(); o.type='square';
-    o.frequency.setValueAtTime(300,t); o.frequency.exponentialRampToValueAtTime(200,t+0.096);
-    const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=760; lp.Q.value=0.8;
+    // sharp downward "pew" — two slightly detuned squares (POKEY grit), lowpass-rounded
+    const o=ctx.createOscillator(),o2=ctx.createOscillator(); o.type=o2.type='square';
+    o.frequency.setValueAtTime(1400,t);  o.frequency.exponentialRampToValueAtTime(180,t+0.10);
+    o2.frequency.setValueAtTime(1410,t); o2.frequency.exponentialRampToValueAtTime(176,t+0.10);
+    const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=3200;
     const g=ctx.createGain();
-    g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.3,t+0.006);
+    g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.22,t+0.004);
     g.gain.exponentialRampToValueAtTime(0.0008,t+0.12);
-    o.connect(lp); lp.connect(g); g.connect(master); o.start(t); o.stop(t+0.14); }
+    o.connect(lp); o2.connect(lp); lp.connect(g); g.connect(master);
+    o.start(t); o2.start(t); o.stop(t+0.13); o2.stop(t+0.13); }
   function heliShoot(){ if(!ctx)return; const t=ctx.currentTime;
     const o=ctx.createOscillator(),g=ctx.createGain(); o.type='square';
     o.frequency.setValueAtTime(260,t); o.frequency.exponentialRampToValueAtTime(90,t+0.14);
     g.gain.setValueAtTime(0.1,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.15);
     o.connect(g); g.connect(master); o.start(t); o.stop(t+0.16); }
-  function explosion(big){ if(!ctx)return; const t=ctx.currentTime, d=big?0.85:0.5;
+  function explosion(big){ if(!ctx)return; const t=ctx.currentTime, d=big?0.95:0.45;
+    // dirty white-noise burst (lowpass swept down) + heavy bass thump.
     const s=ctx.createBufferSource(); s.buffer=noise(d);
     const f=ctx.createBiquadFilter(); f.type='lowpass';
-    f.frequency.setValueAtTime(big?2200:1500,t); f.frequency.exponentialRampToValueAtTime(90,t+d);
-    const g=ctx.createGain(); g.gain.setValueAtTime(big?0.5:0.36,t); g.gain.exponentialRampToValueAtTime(0.001,t+d);
-    // low boom under the noise
-    const o=ctx.createOscillator(); o.type='triangle'; o.frequency.setValueAtTime(big?150:200,t);
-    o.frequency.exponentialRampToValueAtTime(40,t+d); const og=ctx.createGain();
-    og.gain.setValueAtTime(big?0.3:0.2,t); og.gain.exponentialRampToValueAtTime(0.001,t+d);
+    f.frequency.setValueAtTime(big?2400:1700,t); f.frequency.exponentialRampToValueAtTime(70,t+d);
+    const g=ctx.createGain(); g.gain.setValueAtTime(big?0.6:0.42,t); g.gain.exponentialRampToValueAtTime(0.001,t+d);
+    const o=ctx.createOscillator(); o.type='triangle'; o.frequency.setValueAtTime(big?130:185,t);
+    o.frequency.exponentialRampToValueAtTime(big?30:45,t+d); const og=ctx.createGain();
+    og.gain.setValueAtTime(big?0.4:0.24,t); og.gain.exponentialRampToValueAtTime(0.001,t+d);
     s.connect(f); f.connect(g); g.connect(master); o.connect(og); og.connect(master);
-    s.start(t); s.stop(t+d); o.start(t); o.stop(t+d); }
+    s.start(t); s.stop(t+d); o.start(t); o.stop(t+d);
+    // bridge demolition: a second gritty band-passed noise layer makes it longer + more violent
+    if(big){ const s2=ctx.createBufferSource(); s2.buffer=noise(d);
+      const bp=ctx.createBiquadFilter(); bp.type='bandpass'; bp.Q.value=0.7;
+      bp.frequency.setValueAtTime(800,t); bp.frequency.exponentialRampToValueAtTime(120,t+d);
+      const g2=ctx.createGain(); g2.gain.setValueAtTime(0.32,t); g2.gain.exponentialRampToValueAtTime(0.001,t+d);
+      s2.connect(bp); bp.connect(g2); g2.connect(master); s2.start(t); s2.stop(t+d); } }
+  // Player crash / game-over: the explosion cuts the engine hum, then a descending dissolving groan.
+  function crash(){ if(!ctx)return; const t=ctx.currentTime;
+    if(started){ eNoiseGain.gain.setTargetAtTime(0.0001,t,0.04); eOscGain.gain.setTargetAtTime(0.0001,t,0.04); }
+    explosion(false);
+    const o=ctx.createOscillator(); o.type='sawtooth';
+    o.frequency.setValueAtTime(420,t+0.05); o.frequency.exponentialRampToValueAtTime(38,t+1.1);
+    const lp=ctx.createBiquadFilter(); lp.type='lowpass';
+    lp.frequency.setValueAtTime(1800,t); lp.frequency.exponentialRampToValueAtTime(120,t+1.1);
+    const g=ctx.createGain(); g.gain.setValueAtTime(0.0001,t+0.05); g.gain.linearRampToValueAtTime(0.26,t+0.12);
+    g.gain.exponentialRampToValueAtTime(0.0006,t+1.15);
+    o.connect(lp); lp.connect(g); g.connect(master); o.start(t+0.05); o.stop(t+1.2); }
   // Original River Raid refuel: a steady rhythmic BEEP while flying over a depot —
   // a lower beep while filling, a higher beep once the tank is full. The game loop
   // calls this on a fixed cadence (not every frame), so it's a clean "beep…beep…beep".
-  function refuelBeep(full){ if(!ctx)return; const t=ctx.currentTime;
-    const o=ctx.createOscillator(), g=ctx.createGain();
-    o.type='square'; o.frequency.value = full ? 784 : 466;     // high beep = full, low beep = filling
-    g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.06,t+0.006);
-    g.gain.exponentialRampToValueAtTime(0.0001,t+0.075);
-    o.connect(g); g.connect(master); o.start(t); o.stop(t+0.085); }
+  function refuelBeep(frac){ if(!ctx)return; const t=ctx.currentTime;
+    frac=Math.max(0,Math.min(1,frac||0));
+    // a quick ascending two-note purr; the pitch climbs as the tank fills, bright chirp when full
+    const base = 520 + frac*420;
+    const notes = frac>=0.999 ? [880,1175] : [base, base*1.26];
+    notes.forEach((f,i)=>{ const o=ctx.createOscillator(), g=ctx.createGain(); o.type='square';
+      const ti=t+i*0.045; o.frequency.setValueAtTime(f,ti);
+      g.gain.setValueAtTime(0.0001,ti); g.gain.linearRampToValueAtTime(0.07,ti+0.004);
+      g.gain.exponentialRampToValueAtTime(0.0005,ti+0.05);
+      o.connect(g); g.connect(master); o.start(ti); o.stop(ti+0.055); }); }
   function lowFuel(){ if(!ctx)return; const t=ctx.currentTime; const o=ctx.createOscillator(),g=ctx.createGain();
     o.type='square'; o.frequency.value=300; g.gain.setValueAtTime(0.001,t); g.gain.linearRampToValueAtTime(0.14,t+0.02);
     g.gain.exponentialRampToValueAtTime(0.001,t+0.22); o.connect(g); g.connect(master); o.start(t); o.stop(t+0.24); }
   function mute(on){ if(master) master.gain.value = on?0:0.45; }
-  return {init,resume,startEngine,stopEngine,setThrust,heliShoot,fire,explosion,refuelBeep,lowFuel,mute};
+  return {init,resume,startEngine,stopEngine,setThrust,heliShoot,fire,explosion,crash,refuelBeep,lowFuel,mute};
 })();
 
 /* -------------------------------------------------------------- game */
@@ -979,7 +1001,7 @@ function update(dt){
   }
   // rhythmic refuel beep on a fixed cadence (≈6/sec): low while filling, high once full
   if(refuelHit){ g.refuelBeepT=(g.refuelBeepT||0)-dt;
-    if(g.refuelBeepT<=0){ A2.refuelBeep(g.fuel>=0.999); g.refuelBeepT=0.16; } }
+    if(g.refuelBeepT<=0){ A2.refuelBeep(g.fuel); g.refuelBeepT=0.12; } }
   else g.refuelBeepT=0;
   for(const ex of g.explosions) ex.t+=dt;
   g.explosions=g.explosions.filter(ex=>ex.t<ex.life);
@@ -995,7 +1017,7 @@ let haptics=true; function buzz(p){ if(haptics&&navigator.vibrate){ try{ navigat
 let shake=0;                                 // screen-shake amount (seconds), decays in render
 function boom(x,y,big){ game.explosions.push({x,y,t:0,life:big?0.6:0.42,big}); shake=Math.max(shake, big?0.55:0.3); }
 function scorePop(x,sy,n){ if(n>0) game.pops.push({x,sy,n,t:0}); }   // brief "+N" rising score at a kill
-function killJet(){ if(game.state!=='play')return; A2.explosion(false); boom(game.jetX,JET_Y,false);
+function killJet(){ if(game.state!=='play')return; A2.crash(); boom(game.jetX,JET_Y,false);
   shake=Math.max(shake,0.6); buzz([0,45,40,90]);          // crash = biggest shake + double buzz
   game.lives--; game.state='dead'; game.deadTimer=1.1; }
 function respawn(){
