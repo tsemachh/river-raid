@@ -575,7 +575,7 @@ const A2=(()=>{
   // POKEY-style synthesis: the engine is a buzzy detuned motor, effects are
   // built from the TIA/POKEY-flavoured noise + square channels.
   let ctx=null,master=null,started=false;
-  let eNoiseSrc,eLP,eNoiseGain,eOsc,eOscGain;
+  let e1,eNoiseSrc,eNoiseGain,eF,eGain,wobGain;
   function init(){ if(ctx)return; const AC=window.AudioContext||window.webkitAudioContext; ctx=new AC();
     master=ctx.createGain(); master.gain.value=0.45; master.connect(ctx.destination); }
   function resume(){ if(ctx&&ctx.state==='suspended') ctx.resume(); }
@@ -584,24 +584,24 @@ const A2=(()=>{
   function loopNoise(){ const b=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate), x=b.getChannelData(0);
     for(let i=0;i<x.length;i++)x[i]=Math.random()*2-1; return b; }
   function startEngine(){ if(!ctx||started)return;
-    // POKEY-style engine: a low white-noise rumble (lowpass cutoff steps with speed)
-    // plus a low saw body. Audible deep idle; brightens + swells as you accelerate.
+    // "plane taking off" roar: rushing filtered noise + a rising turbine whine.
+    // The roar brightens and swells smoothly as you accelerate (silent idle).
     eNoiseSrc=ctx.createBufferSource(); eNoiseSrc.buffer=loopNoise(); eNoiseSrc.loop=true;
-    eLP=ctx.createBiquadFilter(); eLP.type='lowpass'; eLP.frequency.value=300; eLP.Q.value=1.2;
-    eNoiseGain=ctx.createGain(); eNoiseGain.gain.value=0.16;                 // deep idle rumble level
-    eOsc=ctx.createOscillator(); eOsc.type='sawtooth'; eOsc.frequency.value=52;
-    eOscGain=ctx.createGain(); eOscGain.gain.value=0.05;
-    eNoiseSrc.connect(eLP); eLP.connect(eNoiseGain); eNoiseGain.connect(master);
-    eOsc.connect(eOscGain); eOscGain.connect(master);
-    eNoiseSrc.start(); eOsc.start(); started=true; }
-  function stopEngine(){ if(!started)return; try{eNoiseSrc.stop();eOsc.stop();}catch(e){} started=false; }
+    eF=ctx.createBiquadFilter(); eF.type='bandpass'; eF.frequency.value=520; eF.Q.value=0.9;
+    eNoiseGain=ctx.createGain(); eNoiseGain.gain.value=1.0;                  // air-roar mix
+    e1=ctx.createOscillator(); e1.type='sawtooth'; e1.frequency.value=120;   // turbine whine
+    wobGain=ctx.createGain(); wobGain.gain.value=0.10;                       // whine mix (subtle)
+    eGain=ctx.createGain(); eGain.gain.value=0;                              // master swell (silent at idle)
+    eNoiseSrc.connect(eF); eF.connect(eNoiseGain); eNoiseGain.connect(eGain);
+    e1.connect(wobGain); wobGain.connect(eGain);
+    eGain.connect(master);
+    eNoiseSrc.start(); e1.start(); started=true; }
+  function stopEngine(){ if(!started)return; try{eNoiseSrc.stop();e1.stop();}catch(e){} started=false; }
   function setThrust(on,s){ if(!started)return; const t=ctx.currentTime;
-    // always a deep idle rumble; accelerating steps the cutoff, pitch and level up
-    const k = on ? Math.max(0,Math.min(1,s)) : 0;
-    eLP.frequency.setTargetAtTime(300+k*700,t,0.12);
-    eOsc.frequency.setTargetAtTime(52+k*83,t,0.12);
-    eNoiseGain.gain.setTargetAtTime(0.16+k*0.14,t,0.12);
-    eOscGain.gain.setTargetAtTime(0.05+k*0.03,t,0.12); }
+    if(!on){ eGain.gain.setTargetAtTime(0,t,0.20); return; }                 // spool down when coasting
+    eF.frequency.setTargetAtTime(480+s*2200,t,0.15);
+    e1.frequency.setTargetAtTime(110+s*260,t,0.15);
+    eGain.gain.setTargetAtTime(0.045+s*0.05,t,0.12); }
   function fire(){ if(!ctx)return; const t=ctx.currentTime;
     // sharp downward "pew" — two slightly detuned squares (POKEY grit), lowpass-rounded
     const o=ctx.createOscillator(),o2=ctx.createOscillator(); o.type=o2.type='square';
@@ -637,7 +637,7 @@ const A2=(()=>{
       s2.connect(bp); bp.connect(g2); g2.connect(master); s2.start(t); s2.stop(t+d); } }
   // Player crash / game-over: the explosion cuts the engine hum, then a descending dissolving groan.
   function crash(){ if(!ctx)return; const t=ctx.currentTime;
-    if(started){ eNoiseGain.gain.setTargetAtTime(0.0001,t,0.04); eOscGain.gain.setTargetAtTime(0.0001,t,0.04); }
+    if(started){ eGain.gain.setTargetAtTime(0.0001,t,0.04); }
     explosion(false);
     const o=ctx.createOscillator(); o.type='sawtooth';
     o.frequency.setValueAtTime(420,t+0.05); o.frequency.exponentialRampToValueAtTime(38,t+1.1);
@@ -995,8 +995,8 @@ function update(dt){
       const ox=eb?eb.cx:o.x, ohw=eb?(eb.right-eb.left)/2:(o.w/2);
       const dx=Math.abs(g.jetX-ox);
       if(o.type===OBJ.FUEL){
-        // refuel only when actually OVER the depot — not when just clipping its side
-        if(dx < 4){ g.fuel=Math.min(1,g.fuel+0.012); refuelHit=true; if(g.t>(g.refuelBuzzT||0)){buzz(10);g.refuelBuzzT=g.t+0.5;} }
+        // refuel whenever you overlap the depot — including from the side
+        if(dx < jhw+ohw){ g.fuel=Math.min(1,g.fuel+0.012); refuelHit=true; if(g.t>(g.refuelBuzzT||0)){buzz(10);g.refuelBuzzT=g.t+0.5;} }
       } else if(dx < jhw+ohw){
         boom(g.jetX,JET_Y,false); killJet(); return;
       }
