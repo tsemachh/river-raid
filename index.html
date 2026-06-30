@@ -441,8 +441,8 @@ const tIL=new Int16Array(T_TOTAL), tIR=new Int16Array(T_TOTAL);
     const islandsGap = area<3?2*PLAY_H : area<6?PLAY_H : (PLAY_H>>1);
     // spawn an island mid-section, in wide enough water, with a gap since the last one
     if(inSec>SETTLE && (BRL-inSec)>PLAY_H && Nw===0 && Nisl===0 && width>=110 && gap===0 && RB()%9===1 && area>0){
-      islH=RI(40, Math.min(PLAY_H, 70+area*5)); Nisl=islH;
-      islMax=RI(16,46); islBot=RI(10,islMax); islTop=RI(10,islMax);
+      islH=RI(56, Math.min(PLAY_H, 86+area*5)); Nisl=islH;     // longer islands
+      islMax=RI(34,66); islBot=RI(14,islMax); islTop=RI(14,islMax);  // chunkier islands (esp. the early ones)
     }
     // slow x-offset drift (the river meanders left/right), hard-bounded
     if(Nx<=0){ dir=RB()%3-1; Nx=RB()%8+4; }
@@ -993,9 +993,12 @@ function update(dt){
       if(Math.abs(ocy-JET_Y) > jhh+ohh) continue;
       const eb=o.type===OBJ.BRIDGE?riverEdges(o.wy):null;
       const ox=eb?eb.cx:o.x, ohw=eb?(eb.right-eb.left)/2:(o.w/2);
-      if(Math.abs(g.jetX-ox) < jhw+ohw){
-        if(o.type===OBJ.FUEL){ g.fuel=Math.min(1,g.fuel+0.012); refuelHit=true; if(g.t>(g.refuelBuzzT||0)){buzz(10);g.refuelBuzzT=g.t+0.5;} }
-        else { boom(g.jetX,JET_Y,false); killJet(); return; }
+      const dx=Math.abs(g.jetX-ox);
+      if(o.type===OBJ.FUEL){
+        // refuel only when actually OVER the depot — not when just clipping its side
+        if(dx < 4){ g.fuel=Math.min(1,g.fuel+0.012); refuelHit=true; if(g.t>(g.refuelBuzzT||0)){buzz(10);g.refuelBuzzT=g.t+0.5;} }
+      } else if(dx < jhw+ohw){
+        boom(g.jetX,JET_Y,false); killJet(); return;
       }
     }
   }
