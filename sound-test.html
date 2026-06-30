@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>River Raid — Shot Sound Chooser</title>
+<style>
+  :root{ color-scheme:dark; }
+  body{ margin:0; font-family:"Courier New",monospace; background:#0a0e1a; color:#dfe6ff;
+    min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:14px; padding:22px 16px 40px; }
+  h1{ font-size:20px; color:#7ddb4a; letter-spacing:2px; margin:6px 0 0; text-align:center; }
+  p.note{ color:#9aa6c8; font-size:13px; max-width:34em; text-align:center; line-height:1.5; margin:0 0 6px; }
+  .card{ width:min(92vw,440px); background:#121a30; border:1px solid #2a375c; border-radius:12px;
+    padding:14px 16px; display:flex; align-items:center; gap:14px; }
+  .card b{ font-size:16px; color:#ffe14d; }
+  .card small{ display:block; color:#9aa6c8; font-weight:normal; font-size:12px; margin-top:3px; line-height:1.4; }
+  .grow{ flex:1; }
+  button.play{ font-family:inherit; font-weight:bold; font-size:15px; color:#001; background:#7ddb4a;
+    border:none; border-radius:9px; padding:14px 20px; cursor:pointer; box-shadow:0 4px 0 #3a7d18; white-space:nowrap; }
+  button.play:active{ transform:translateY(3px); box-shadow:0 1px 0 #3a7d18; }
+  .rapid{ background:#e2b53a; box-shadow:0 4px 0 #8a6512; }
+  .rapid:active{ box-shadow:0 1px 0 #8a6512; }
+  .pick{ margin-top:10px; color:#7ddb4a; font-size:13px; text-align:center; max-width:32em; line-height:1.5; }
+  .tag{ display:inline-block; font-size:11px; color:#001; background:#7ddb4a; border-radius:6px; padding:1px 7px; margin-left:6px; vertical-align:middle; }
+</style>
+</head>
+<body>
+  <h1>RIVER RAID — SHOT SOUND CHOOSER v2</h1>
+  <p class="note">Now tuned for that soft, low <b>“paw paw”</b> — darker pitch, rounded, not zappy.
+  Tap <b>PLAY</b> for one shot, <b>RAPID</b> to hear “paw paw paw” fired in succession. Volume up.
+  Tell me the letter you like — F, G, H, I or J.</p>
+
+  <div id="cards"></div>
+
+  <p class="pick">Reply with the letter you want (e.g. “go with F”), or say “warmer / lower / shorter” and I’ll keep tuning.</p>
+
+<script>
+"use strict";
+let ctx;
+function ac(){ if(!ctx) ctx=new (window.AudioContext||window.webkitAudioContext)(); if(ctx.state==='suspended')ctx.resume(); return ctx; }
+function noise(d){ const c=ac(); const n=Math.floor(c.sampleRate*d); const b=c.createBuffer(1,n,c.sampleRate);
+  const ch=b.getChannelData(0); for(let i=0;i<n;i++) ch[i]=Math.random()*2-1; return b; }
+
+// one soft, low, rounded "paw": square through a low lowpass, gentle attack, short decay
+function paw(t, f0, f1, cut, peak, dur){ const c=ac();
+  const o=c.createOscillator(); o.type='square';
+  o.frequency.setValueAtTime(f0,t); o.frequency.exponentialRampToValueAtTime(f1,t+dur*0.8);
+  const lp=c.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=cut; lp.Q.value=0.8;
+  const g=c.createGain();
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.linearRampToValueAtTime(peak,t+0.006);          // soft attack -> "p", not a click
+  g.gain.exponentialRampToValueAtTime(0.0008,t+dur);     // rounded "aw" tail
+  o.connect(lp); lp.connect(g); g.connect(c.destination);
+  o.start(t); o.stop(t+dur+0.02);
+}
+// ---- candidates ----
+const SOUNDS = {
+  // F = warm "paw" — mid-low, rounded, the baseline
+  F(t0){ paw(t0||ac().currentTime, 300, 200, 760, 0.24, 0.12); },
+
+  // G = mellow "paw" — softer + darker (lower cutoff)
+  G(t0){ paw(t0||ac().currentTime, 250, 165, 540, 0.27, 0.13); },
+
+  // H = double "paw-paw" — two soft blips in one trigger
+  H(t0){ const t=t0||ac().currentTime; paw(t, 300, 205, 740, 0.24, 0.085); paw(t+0.085, 270, 185, 680, 0.22, 0.10); },
+
+  // I = deep "paw" — lowest + roundest, a touch longer
+  I(t0){ paw(t0||ac().currentTime, 220, 150, 460, 0.30, 0.15); },
+
+  // J = brighter "paw" — a bit more body/snap but still rounded
+  J(t0){ paw(t0||ac().currentTime, 360, 235, 980, 0.22, 0.10); }
+};
+
+const META = [
+  ['F','Warm paw','Mid-low, rounded “paw”. Balanced baseline.'],
+  ['G','Mellow paw','Softer and darker — gentler, more muffled.'],
+  ['H','Double paw-paw','Two soft blips per shot — that “paw-paw” doubling.'],
+  ['I','Deep paw','Lowest and roundest, a touch longer — fattest tone.'],
+  ['J','Bright paw','A bit more body and snap, still warm not zappy.']
+];
+
+const cards=document.getElementById('cards');
+META.forEach(([k,name,desc])=>{
+  const d=document.createElement('div'); d.className='card';
+  d.innerHTML=`<div class="grow"><b>${k} — ${name}${k==='F'?'<span class=tag>suggested</span>':''}</b><small>${desc}</small></div>`;
+  const p=document.createElement('button'); p.className='play'; p.textContent='PLAY';
+  p.onclick=()=>SOUNDS[k]();
+  const r=document.createElement('button'); r.className='play rapid'; r.textContent='RAPID';
+  r.onclick=()=>{ const c=ac(); for(let i=0;i<5;i++) SOUNDS[k](c.currentTime+i*0.26); };
+  d.appendChild(p); d.appendChild(r); cards.appendChild(d);
+});
+</script>
+</body>
+</html>

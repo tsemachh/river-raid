@@ -604,11 +604,14 @@ const A2=(()=>{
     e1.frequency.setTargetAtTime(110+s*260,t,0.15);
     eGain.gain.setTargetAtTime(0.045+s*0.05,t,0.12); }
   function fire(){ if(!ctx)return; const t=ctx.currentTime;
-    const o=ctx.createOscillator(),g=ctx.createGain(); o.type='square';
-    o.frequency.setValueAtTime(1200,t); o.frequency.exponentialRampToValueAtTime(120,t+0.16);
-    g.gain.setValueAtTime(0.001,t); g.gain.linearRampToValueAtTime(0.2,t+0.005);
-    g.gain.exponentialRampToValueAtTime(0.001,t+0.18);
-    o.connect(g); g.connect(master); o.start(t); o.stop(t+0.19); }
+    // soft, low "paw" — a square through a low lowpass, gentle attack + rounded tail (classic TIA-style shot)
+    const o=ctx.createOscillator(); o.type='square';
+    o.frequency.setValueAtTime(300,t); o.frequency.exponentialRampToValueAtTime(200,t+0.096);
+    const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=760; lp.Q.value=0.8;
+    const g=ctx.createGain();
+    g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.3,t+0.006);
+    g.gain.exponentialRampToValueAtTime(0.0008,t+0.12);
+    o.connect(lp); lp.connect(g); g.connect(master); o.start(t); o.stop(t+0.14); }
   function heliShoot(){ if(!ctx)return; const t=ctx.currentTime;
     const o=ctx.createOscillator(),g=ctx.createGain(); o.type='square';
     o.frequency.setValueAtTime(260,t); o.frequency.exponentialRampToValueAtTime(90,t+0.14);
@@ -747,7 +750,7 @@ function safeSpawnX(wy){
 }
 
 /* -------------------------------------------------------------- input */
-const keys={}; let tiltSteer=0, tiltThrottle=0, tiltOn=false, autoFire=false, muted=false;
+const keys={}; let tiltSteer=0, tiltThrottle=0, tiltOn=false, autoFire=true, muted=false;
 try{ muted = localStorage.getItem('rr_mute')==='1'; }catch(e){}
 function setMute(on){ muted=on; if(A2&&A2.mute)A2.mute(on); try{localStorage.setItem('rr_mute', on?'1':'');}catch(e){}
   const mb=document.getElementById('muteBtn'); if(mb) mb.textContent = on?'\u{1F507}':'\u{1F50A}'; }
@@ -825,7 +828,7 @@ function update(dt){
   // after a death you sit at the bridge until you FIRE — then the plane starts moving
   if(g.waiting){
     A2.setThrust(false,0);
-    if(keys[' ']||autoFire||keys['ArrowUp']||(tiltOn&&tiltThrottle>0.2)) g.waiting=false;
+    if(keys[' ']||keys['ArrowUp']||(tiltOn&&tiltThrottle>0.2)||(dragId!==null&&padThrottle>0.05)) g.waiting=false;
     else return;          // frozen: no scroll, no fuel burn, no collisions
   }
   // throttle — keys, drag the pad up/down, or tilt the phone for variable speed
@@ -1280,8 +1283,8 @@ function startGame(sec){ sec=(typeof sec==='number')?sec:0; A2.init(); A2.resume
   if(isTouch){ document.getElementById('tiltTag').classList.remove('hidden'); }
   let seen=false; try{ seen=localStorage.getItem('rr_seen')==='1'; }catch(e){}
   if(!seen){ pendingSec=sec; document.getElementById('howtoBody').innerHTML = isTouch
-      ? 'Drag anywhere to <b>steer</b> · drag <b>up/down</b> to set speed.<br>Tap <b>FIRE</b> (or turn on <b>AUTO</b>) to shoot.<br>Fly over <b>fuel</b> depots to refuel — don’t shoot them.<br>Destroy <b>bridges</b> to reach the next stage.'
-      : '<b>◀ ▶</b> steer · <b>▲</b> speed up · <b>▼</b> slow · <b>Space</b> fire · <b>A</b> auto-fire · <b>M</b> mute · <b>P</b> pause.<br>Fly over <b>fuel</b> depots to refuel — don’t shoot them. Destroy <b>bridges</b> to advance.';
+      ? '<b>Auto-fire is on</b> — just fly! Drag to <b>steer</b> · drag <b>up/down</b> to set speed.<br>Tap <b>AUTO</b> to turn auto-fire off and tap <b>FIRE</b> yourself.<br>Fly over <b>fuel</b> depots to refuel — don’t shoot them.<br>Destroy <b>bridges</b> to reach the next stage.'
+      : '<b>◀ ▶</b> steer · <b>▲</b> speed up · <b>▼</b> slow · <b>Space</b> fire · <b>A</b> toggle auto-fire (on) · <b>M</b> mute · <b>P</b> pause.<br>Fly over <b>fuel</b> depots to refuel — don’t shoot them. Destroy <b>bridges</b> to advance.';
     show('howtoScreen'); return; }
   beginGame(sec); }
 function beginGame(sec){ show(null); showExit(true); A2.startEngine(); newGame(sec); paused=false; }
@@ -1322,7 +1325,7 @@ const isTouch=('ontouchstart'in window)||navigator.maxTouchPoints>0;
 if(isTouch){ document.getElementById('touch').classList.remove('hidden');
   document.getElementById('tiltHint').textContent='Mobile: drag to steer · drag up/down (or tilt) for speed · tap AUTO for auto-fire';
   document.getElementById('keyHelp').classList.add('hidden');
-  setAuto(false);                                 // auto-fire OFF by default — tap FIRE, or toggle AUTO
+  setAuto(true);                                  // auto-fire ON by default — just fly; tap AUTO to turn it off
   sprScale=1.5;                                    // bigger sprites on phones, integer device-px (crisp, pixel-perfect)
   const tt=document.getElementById('tiltTag');
   tt.textContent='TILT ⟳';
