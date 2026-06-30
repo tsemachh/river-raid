@@ -431,16 +431,16 @@ const tIL=new Int16Array(T_TOTAL), tIR=new Int16Array(T_TOTAL);
   let seed=0x6a3f17c5>>>0;
   const RB=()=>{ seed=(Math.imul(seed,1664525)+1013904223)>>>0; return (seed>>>15)&0xFF; };  // 0..255
   const RI=(a,b)=>a+Math.floor(RB()/256*(b-a+1));
-  const MID=FIELD_W>>1, BRW=24, SETTLE=64, MAXX=12;
+  const MID=FIELD_W>>1, BRW=28, SETTLE=64, MAXX=12;
   const BRL=SECTION_BLOCKS*BLOCK_H;            // bridge spacing (one per section)
-  let width=80, xoff=0, dir=0, Nx=0, Nw=0, target=80;
+  let width=116, xoff=0, dir=0, Nx=0, Nw=0, target=116;   // wider river -> thinner banks, more water
   let Nisl=0, islMax=0, islBot=0, islTop=0, islH=0, gap=0;
   for(let L=0;L<T_TOTAL;L++){
     const inSec=L%BRL, area=Math.floor(L/BRL);
     if(gap>0) gap--;
     const islandsGap = area<3?2*PLAY_H : area<6?PLAY_H : (PLAY_H>>1);
     // spawn an island mid-section, in wide enough water, with a gap since the last one
-    if(inSec>SETTLE && (BRL-inSec)>PLAY_H && Nw===0 && Nisl===0 && width>=96 && gap===0 && RB()%9===1 && area>0){
+    if(inSec>SETTLE && (BRL-inSec)>PLAY_H && Nw===0 && Nisl===0 && width>=110 && gap===0 && RB()%9===1 && area>0){
       islH=RI(40, Math.min(PLAY_H, 70+area*5)); Nisl=islH;
       islMax=RI(16,46); islBot=RI(10,islMax); islTop=RI(10,islMax);
     }
@@ -449,8 +449,8 @@ const tIL=new Int16Array(T_TOTAL), tIR=new Int16Array(T_TOTAL);
     xoff+=dir*(RB()%2+1); Nx--;
     if(xoff>MAXX){ xoff=MAXX; dir=-1; } else if(xoff<-MAXX){ xoff=-MAXX; dir=1; }
     if(Nisl===0){
-      if(inSec<4){ width=BRW; target=RI(64,112); Nw=SETTLE; }        // bridge neck, then opens up
-      else if(RB()%150===1 && Nw===0){ target=RI(46,112); Nw=SETTLE; }  // occasional width change
+      if(inSec<4){ width=BRW; target=RI(92,140); Nw=SETTLE; }        // bridge neck, then opens up wide
+      else if(RB()%150===1 && Nw===0){ target=RI(78,140); Nw=SETTLE; }  // occasional width change
       if((BRL-inSec)<=SETTLE){ target=BRW; Nw=SETTLE; }              // narrow into the next bridge
     } else {
       const iw = Nisl===islH?islBot : (Nisl===1?islTop : RI((islTop+islBot)>>1, islMax));

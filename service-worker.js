@@ -1,7 +1,7 @@
 /* River Raid — service worker.
    The PAGE is served network-first so new deploys appear immediately (no stale game),
    while static assets (icons, manifest) are cache-first for offline + speed. */
-const CACHE = 'river-raid-v8';
+const CACHE = 'river-raid-v9';
 
 // allow the page to tell a waiting worker to activate immediately
 self.addEventListener('message', (e) => { if (e.data === 'skip') self.skipWaiting(); });
