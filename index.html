@@ -165,6 +165,10 @@
       <div class="keys" style="margin-top:6px">More games by Tsemach:
         <a href="https://tsemachh.github.io/xonix/" target="_blank" rel="noopener" style="color:#7fd0ff">Xonix</a> ·
         <a href="https://tsemachh.github.io/arcade-tag/" target="_blank" rel="noopener" style="color:#7fd0ff">Arcade Tag (תופסת)</a></div>
+      <div id="iosHint" class="hidden" style="margin-top:8px;padding:8px 12px;border:1px solid #7fd0ff;border-radius:10px;font-size:13px;background:rgba(127,208,255,.08);display:flex;align-items:center;gap:8px;max-width:90vw;">
+        <span>📲 Play as an app: tap <b>Share</b> <span style="font-size:15px">⬆︎</span> then <b>Add to Home Screen</b></span>
+        <button id="iosHintClose" style="background:none;border:none;color:#9ab;font-size:16px;padding:2px 6px;cursor:pointer">✕</button>
+      </div>
       <div id="ticker"><div class="track" id="tickerTrack"></div></div>
     </div>
 
@@ -1063,7 +1067,7 @@ let best=0; try{ best=(+localStorage.getItem('rr_best'))||0; }catch(e){}   // pe
 /* ---- Hall of Fame: global leaderboard (Cloudflare Worker) with local fallback ----
    Paste your deployed Worker URL below (no trailing slash). Until it's set, scores
    are kept locally in this browser so the feature still works. See leaderboard/README.md. */
-const LB_URL = '';   // e.g. 'https://river-raid-scores.yoursubdomain.workers.dev'
+const LB_URL = 'https://river-raid-scores.tsemachh.workers.dev';
 const LB = (function(){
   function local(){ try{ return JSON.parse(localStorage.getItem('rr_scores')||'[]'); }catch(e){ return []; } }
   function saveLocal(a){ try{ localStorage.setItem('rr_scores', JSON.stringify(a.slice(0,25))); }catch(e){} }
@@ -1400,6 +1404,18 @@ addEventListener('orientationchange',()=>{ recalibrateTilt(); computeLayout(); }
 // when a new version is deployed, the new worker takes over and the page reloads once,
 // so the installed app (and PWA) always shows the latest build on next launch.
 if('serviceWorker' in navigator){
+  // iOS never auto-prompts PWA install (no beforeinstallprompt) — show a one-time Add-to-Home-Screen hint
+  try{
+    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+    const standalone = navigator.standalone===true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+    if(isIOS && !standalone && !localStorage.getItem('rr_ioshint')){
+      const hint=document.getElementById('iosHint');
+      if(hint){ hint.classList.remove('hidden');
+        const x=document.getElementById('iosHintClose');
+        if(x) x.addEventListener('click', ()=>{ hint.classList.add('hidden'); try{localStorage.setItem('rr_ioshint','1');}catch(e){} });
+      }
+    }
+  }catch(e){}
   let refreshing=false;
   navigator.serviceWorker.addEventListener('controllerchange',()=>{
     if(refreshing)return; refreshing=true; location.reload();

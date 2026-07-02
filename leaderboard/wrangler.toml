@@ -1,0 +1,8 @@
+name = "river-raid-scores"
+main = "worker.js"
+compatibility_date = "2026-07-01"
+workers_dev = true
+
+[[kv_namespaces]]
+binding = "SCORES"
+id = "7149a78ef47644e8b17b9eeb82aeecd9"
