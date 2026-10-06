@@ -4,7 +4,7 @@ A faithful, single-file HTML5 remake of the classic vertical-scrolling river sho
 modeled on the Atari 8-bit (800XL) version. Pure vanilla JavaScript + Canvas — **no build
 step, no dependencies, no frameworks**. Just open `index.html`.
 
-**▶ Play it live:** https://tsemachh.github.io/river-raid/
+**▶ Play it live:** https://games.tsemach.dev/river-raid/
 
 Installable as a Progressive Web App — on a phone, use your browser's *Add to Home Screen*
 and it runs full-screen and offline like a native app.
@@ -83,7 +83,7 @@ git commit -m "your message"
 git push origin main
 ```
 
-The site updates at https://tsemachh.github.io/river-raid/ a minute or two later.
+The site updates at https://games.tsemach.dev/river-raid/ a minute or two later.
 
 ## License
 
